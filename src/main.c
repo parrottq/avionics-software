@@ -8,14 +8,17 @@
  */
 
 #include "global.h"
+#include "config.h"
 
 #include "dma.h"
 #include "sercom-uart.h"
 #include "sercom-spi.h"
-
+#include "sercom-i2c.h"
 
 #ifdef ID_USB
 #include "usb/usb.h"
+#else
+#undef ENABLE_USB
 #endif
 
 #include "console.h"
@@ -29,10 +32,31 @@ static void main_loop(void);
 
 // MARK: Variable Definitions
 volatile uint32_t millis;
+volatile uint8_t inhibit_sleep_g;
 
 static uint32_t lastLed_g;
 static uint8_t stat_transaction_id;
 
+// MARK: Hardware Resources from Config File
+#ifdef SPI_SERCOM_INST
+struct sercom_spi_desc_t spi_g;
+#endif
+#ifdef I2C_SERCOM_INST
+struct sercom_i2c_desc_t i2c_g;
+#endif
+
+#ifdef UART0_SERCOM_INST
+struct sercom_uart_desc_t uart0_g;
+#endif
+#ifdef UART1_SERCOM_INST
+struct sercom_uart_desc_t uart1_g;
+#endif
+#ifdef UART2_SERCOM_INST
+struct sercom_uart_desc_t uart2_g;
+#endif
+#ifdef UART3_SERCOM_INST
+struct sercom_uart_desc_t uart3_g;
+#endif
 
 // Stores 2 ^ TRACE_BUFFER_MAGNITUDE_PACKETS packets.
 // 4 -> 16 packets
@@ -138,11 +162,54 @@ static void init_main_clock(void)
     while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY); // Wait for synchronization
 }
 
-static struct sercom_uart_desc_t uart_console_g;
-static struct sercom_spi_desc_t spi_g;
 
-static struct console_desc_t console_g;
-static struct cli_desc_t cli_g;
+struct console_desc_t console_g;
+struct cli_desc_t cli_g;
+
+
+static inline void init_io (void)
+{
+    // Debug LED
+    PORT->Group[DEBUG_LED_GROUP_NUM].DIRSET.reg = DEBUG_LED_MASK;
+    //PORT->Group[DEBUG_LED_GROUP_NUM].PINCFG[30].bit.DRVSTR = 0b1;
+    PORT->Group[DEBUG_LED_GROUP_NUM].PINCFG[15].bit.DRVSTR = 0b1;
+    
+    // SPI
+    PORT->Group[1].PMUX[6].bit.PMUXE = 0x2;     // MOSI (Pad 0)
+    PORT->Group[1].PINCFG[12].bit.PMUXEN = 0b1;
+    PORT->Group[1].PMUX[6].bit.PMUXO = 0x2;     // SCK (Pad 1)
+    PORT->Group[1].PINCFG[13].bit.PMUXEN = 0b1;
+    PORT->Group[1].PMUX[7].bit.PMUXE = 0x2;     // MISO (Pad 2)
+    PORT->Group[1].PINCFG[14].bit.PMUXEN = 0b1;
+    
+    // I2C
+    PORT->Group[1].PMUX[8].bit.PMUXE = 0x2;     // SDA (Pad 0)
+    PORT->Group[1].PINCFG[16].bit.PMUXEN = 0b1;
+    PORT->Group[1].PMUX[8].bit.PMUXO = 0x2;     // SCL (Pad 1)
+    PORT->Group[1].PINCFG[17].bit.PMUXEN = 0b1;
+    
+    // UART 0
+    
+    // UART 1
+    
+    // UART 2
+    
+    // UART 3
+    PORT->Group[0].PMUX[11].bit.PMUXE = 0x2;
+    PORT->Group[0].PINCFG[22].bit.PMUXEN = 0b1;
+    PORT->Group[0].PMUX[11].bit.PMUXO = 0x2;
+    PORT->Group[0].PINCFG[23].bit.PMUXEN = 0b1;
+    
+    // USB
+    PORT->Group[0].PMUX[12].bit.PMUXE = 0x6;     // D-
+    PORT->Group[0].PINCFG[24].bit.PMUXEN = 0b1;
+    PORT->Group[0].PMUX[12].bit.PMUXO = 0x6;     // D+
+    PORT->Group[0].PINCFG[25].bit.PMUXEN = 0b1;
+    
+    // IO Expander CS pin
+    PORT->Group[0].DIRSET.reg = PORT_PA28;
+    PORT->Group[0].OUTSET.reg = PORT_PA28;
+}
 
 int main(void)
 {
@@ -167,78 +234,115 @@ int main(void)
     MTB->FLOW.reg = (((uint32_t) mtb - REG_MTB_BASE) + TRACE_BUFFER_SIZE_BYTES) & 0xFFFFFFF8;
     MTB->MASTER.reg = 0x80000000 + (TRACE_BUFFER_MAGNITUDE_PACKETS - 1);
     
-    
-    
-    // Setup PORT pins
-//    PORT->Group[0].PINCFG[15].bit.PULLEN = 0b1;
-//    PORT->Group[0].PINCFG[15].bit.INEN = 0b1;
-//    PORT->Group[0].OUTSET.reg = PORT_PA15;
-    
-    PORT->Group[DEBUG_LED_GROUP_NUM].DIRSET.reg = DEBUG_LED_MASK;
-    //PORT->Group[DEBUG_LED_GROUP_NUM].PINCFG[30].bit.DRVSTR = 0b1;
-    PORT->Group[DEBUG_LED_GROUP_NUM].PINCFG[15].bit.DRVSTR = 0b1;
+    init_io();
     
     // Init DMA
+#ifdef ENABLE_DMA
     init_dmac();
+#endif
+
+    // Init SPI
+#ifdef SPI_SERCOM_INST
     
-    // USART Test
-    // Set USART pins to the proper pinmux
-    PORT->Group[0].PMUX[11].bit.PMUXE = 0x2;
-    PORT->Group[0].PINCFG[22].bit.PMUXEN = 0b1;
-    PORT->Group[0].PMUX[11].bit.PMUXO = 0x2;
-    PORT->Group[0].PINCFG[23].bit.PMUXEN = 0b1;
+#ifndef SPI_RX_DMA_CHAN
+#define SPI_RX_DMA_CHAN -1
+#endif
+
+#ifndef SPI_TX_DMA_CHAN
+#define SPI_TX_DMA_CHAN -1
+#endif
+     init_sercom_spi(&spi_g, SPI_SERCOM_INST, F_CPU, GCLK_CLKCTRL_GEN_GCLK0,
+                     SPI_TX_DMA_CHAN, SPI_RX_DMA_CHAN);
+#endif
     
-    init_sercom_uart(&uart_console_g, SERCOM3, 115200UL, F_CPU,
-                     GCLK_CLKCTRL_GEN_GCLK0, -1, 1);
-//    sercom_uart_put_string(&uart_console_g, "\x1B[2J\x1B[HHello Console!\n");
-//    sercom_uart_put_string_blocking(&uart_console_g, "!@#$%^&*()_+-=~`[]\{}|;'"
-//        ":\",./<>?\tqwertyuiopasdfghjklzxcvbnm\tQWERTYUIOPASDFGHJKLZXCVBNM "
-//        "1234567890\n");
+    // Init I2C
+#ifdef I2C_SERCOM_INST
+    
+#ifndef I2C_DMA_CHAN
+#define I2C_DMA_CHAN -1
+#endif
+    
+#ifndef I2C_SPEED
+#define I2C_SPEED I2C_MODE_STANDARD
+#endif
+    init_sercom_i2c(&i2c_g, I2C_SERCOM_INST, F_CPU, GCLK_CLKCTRL_GEN_GCLK0,
+                    I2C_SPEED, I2C_DMA_CHAN);
+#endif
+    
+    // Init UART 0
+#ifdef UART0_SERCOM_INST
+#ifndef UART0_DMA_CHAN
+#define UART0_DMA_CHAN -1
+#endif
+    init_sercom_uart(&uart0_g, UART0_SERCOM_INST, UART0_BAUD, F_CPU,
+                     GCLK_CLKCTRL_GEN_GCLK0, UART0_DMA_CHAN, UART0_ECHO);
+#endif
+    
+    // Init UART 1
+#ifdef UART1_SERCOM_INST
+#ifndef UART1_DMA_CHAN
+#define UART1_DMA_CHAN -1
+#endif
+    init_sercom_uart(&uart1_g, UART1_SERCOM_INST, UART1_BAUD, F_CPU,
+                     GCLK_CLKCTRL_GEN_GCLK0, UART1_DMA_CHAN, UART1_ECHO);
+#endif
+    
+    // Init UART 2
+#ifdef UART2_SERCOM_INST
+#ifndef UART2_DMA_CHAN
+#define UART2_DMA_CHAN -1
+#endif
+    init_sercom_uart(&uart2_g, UART2_SERCOM_INST, UART2_BAUD, F_CPU,
+                     GCLK_CLKCTRL_GEN_GCLK0, UART2_DMA_CHAN, UART2_ECHO);
+#endif
+    
+    // Init UART 3
+#ifdef UART3_SERCOM_INST
+#ifndef UART3_DMA_CHAN
+#define UART3_DMA_CHAN -1
+#endif
+    init_sercom_uart(&uart3_g, UART3_SERCOM_INST, UART3_BAUD, F_CPU,
+                     GCLK_CLKCTRL_GEN_GCLK0, UART3_DMA_CHAN, UART3_ECHO);
+#endif
+    
+    // Init USB
+#ifdef ENABLE_USB
+    usb_init();
+    usb_set_speed(USB_SPEED_FULL);
+    usb_attach();
+#endif
+    
+    // Console
+#ifdef ENABLE_CONSOLE
+#ifdef CONSOLE_UART
+    init_console(&console_g, &CONSOLE_UART, '\r');
+#elif defined ENABLE_USB
+    init_console(&console_g, NULL, '\r');
+#endif
+#endif
+    
+    // Debug CLI
+#ifdef ENABLE_DEBUG_CLI
+    init_cli(&cli_g, &console_g, "> ", debug_commands_funcs,
+             debug_commands_num_funcs);
+#endif
+    
+    
     
     // SPI Test
-    PORT->Group[1].PMUX[6].bit.PMUXE = 0x2;     // MOSI (Pad 0)
-    PORT->Group[1].PINCFG[12].bit.PMUXEN = 0b1;
-    PORT->Group[1].PMUX[6].bit.PMUXO = 0x2;     // SCK (Pad 1)
-    PORT->Group[1].PINCFG[13].bit.PMUXEN = 0b1;
-    PORT->Group[1].PMUX[7].bit.PMUXE = 0x2;     // MISO (Pad 2)
-    PORT->Group[1].PINCFG[14].bit.PMUXEN = 0b1;
-    
-    // Setup IO Expander CS pin
-    PORT->Group[0].DIRSET.reg = PORT_PA28;
-    PORT->Group[0].OUTSET.reg = PORT_PA28;
-    
-    //__BKPT(0);
-    
-    init_sercom_spi(&spi_g, SERCOM4, F_CPU, GCLK_CLKCTRL_GEN_GCLK0, 1, 2);
-
-    uint8_t message_io_dir[] ={0b01000000, 0x00, 0x0};
+    uint8_t message_io_dir[] = {0b01000000, 0x00, 0x0};
     sercom_spi_start(&spi_g, &stat_transaction_id, 8000000UL, 0, PORT_PA28,
                      message_io_dir, 3, NULL, 0);
     while (!sercom_spi_transaction_done(&spi_g, stat_transaction_id));
     sercom_spi_clear_transaction(&spi_g, stat_transaction_id);
     
-    // USB test
-#ifdef ID_USB
-    PORT->Group[0].PMUX[12].bit.PMUXE = 0x6;     // D-
-    PORT->Group[0].PINCFG[24].bit.PMUXEN = 0b1;
-    PORT->Group[0].PMUX[12].bit.PMUXO = 0x6;     // D+
-    PORT->Group[0].PINCFG[25].bit.PMUXEN = 0b1;
-
-    usb_init();
-    usb_set_speed(USB_SPEED_FULL);
-    usb_attach();
-
-    init_console(&console_g, NULL, '\r');
-#else
-    init_console(&console_g, &uart_console_g, '\r');
-#endif
-    init_cli(&cli_g, &console_g, "> ", debug_commands_funcs,
-             debug_commands_num_funcs);
     
     // Main Loop
     for (;;) {
         main_loop();
-        __WFI();
+        if (!inhibit_sleep_g) {
+            __WFI();
+        }
     }
     
 	return 0; // never reached
@@ -273,8 +377,14 @@ static void main_loop ()
         sercom_spi_start(&spi_g, &stat_transaction_id, 8000000UL, 0, PORT_PA28,
                          stat_buffer, 3, NULL, 0);
     }
-    
+        
+#ifdef ENABLE_CONSOLE
     console_service(&console_g);
+#endif
+    
+#ifdef I2C_SERCOM_INST
+    //sercom_i2c_service(&i2c_g);
+#endif
 }
 
 
