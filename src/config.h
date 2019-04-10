@@ -150,7 +150,14 @@ extern struct sercom_uart_desc_t uart3_g;
 #define ENABLE_DEBUG_CLI
 /* Prompt for DEBUG CLI */
 
-
-
+//
+//
+// SD Card
+//
+//
+#define ENABLE_SD
+#define SD_BAUDRATE 12000000 //12M baud
+#define SD_CS_PIN_GROUP 0
+#define SD_CS_PIN_MASK (1<<11)
 
 #endif /* config_h */
