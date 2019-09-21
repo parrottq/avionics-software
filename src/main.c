@@ -253,8 +253,8 @@ int main(void)
 #ifndef SPI_TX_DMA_CHAN
 #define SPI_TX_DMA_CHAN -1
 #endif
-     init_sercom_spi(&spi_g, SPI_SERCOM_INST, F_CPU, GCLK_CLKCTRL_GEN_GCLK0,
-                     SPI_TX_DMA_CHAN, SPI_RX_DMA_CHAN);
+    init_sercom_spi(&spi_g, SPI_SERCOM_INST, F_CPU, GCLK_CLKCTRL_GEN_GCLK0,
+        SPI_TX_DMA_CHAN, SPI_RX_DMA_CHAN);
 #endif
 
     // Init I2C
