@@ -15,24 +15,24 @@
 #include "transaction-queue.h"
 
 // The minimum length for a transaction to use DMA
-#define I2C_DMA_THREASHOLD  0
+#define I2C_DMA_THREASHOLD  1
 // The maximum length for an I2C DMA transaction
 #define I2C_DMA_MAX  255
 
 // Target frequencies and high to low ratios for various modes
 // ratio = fraction of time spend with SCL high
 #define I2C_FREQ_STANDARD       100000UL
-#define I2C_RATIO_STANDARD      0.5
-#define I2C_RISE_STANDARD       0.0000003 // (300 ns worst case)
+#define I2C_RATIO_STANDARD      0.5f
+#define I2C_RISE_STANDARD       0.0000003f // (300 ns worst case)
 #define I2C_FREQ_FAST           400000UL
-#define I2C_RATIO_FAST          0.33
-#define I2C_RISE_FAST           0.0000003 // (300 ns worst case)
+#define I2C_RATIO_FAST          0.33f
+#define I2C_RISE_FAST           0.0000003f // (300 ns worst case)
 #define I2C_FREQ_FAST_PLUS      1000000UL
-#define I2C_RATIO_FAST_PLUS     0.33
-#define I2C_RISE_FAST_PLUS      0.0000001 // (100 ns worst case)
+#define I2C_RATIO_FAST_PLUS     0.33f
+#define I2C_RISE_FAST_PLUS      0.0000001f // (100 ns worst case)
 #define I2C_FREQ_HIGH_SPEED     3400000UL
-#define I2C_RATIO_HIGH_SPEED    0.33
-#define I2C_RISE_HIGH_SPEED     0.00000004 // (40 ns worst case)
+#define I2C_RATIO_HIGH_SPEED    0.33f
+#define I2C_RISE_HIGH_SPEED     0.00000004f // (40 ns worst case)
 
 
 static void sercom_i2c_isr (Sercom *sercom, uint8_t inst_num, void *state);
@@ -141,6 +141,8 @@ void init_sercom_i2c(struct sercom_i2c_desc_t *descriptor, Sercom *sercom,
         .state = (void*)descriptor
     };
     descriptor->sercom_instnum = instance_num;
+    
+    NVIC_SetPriority(sercom_get_irq_num(instance_num), SERCOM_IRQ_PRIORITY);
     NVIC_EnableIRQ(sercom_get_irq_num(instance_num));
     
     /* Setup Descriptor */
@@ -178,7 +180,7 @@ void init_sercom_i2c(struct sercom_i2c_desc_t *descriptor, Sercom *sercom,
 
 uint8_t sercom_i2c_start_generic(struct sercom_i2c_desc_t *i2c_inst,
                                  uint8_t *trans_id, uint8_t dev_address,
-                                 uint8_t *out_buffer, uint16_t out_length,
+                                 uint8_t const* out_buffer, uint16_t out_length,
                                  uint8_t *in_buffer, uint16_t in_length)
 {
     struct transaction_t *t = transaction_queue_add(&i2c_inst->queue);
@@ -325,7 +327,7 @@ uint8_t sercom_i2c_clear_transaction(struct sercom_i2c_desc_t *i2c_inst,
                             transaction_queue_get(&i2c_inst->queue, trans_id));
 }
 
-uint8_t sercom_i2c_device_avaliable(struct sercom_i2c_desc_t *i2c_inst,
+uint8_t sercom_i2c_device_available(struct sercom_i2c_desc_t *i2c_inst,
                                     uint8_t trans_id, uint8_t address)
 {
     struct transaction_t *t = transaction_queue_get(&i2c_inst->queue, trans_id);
@@ -459,7 +461,7 @@ void sercom_i2c_service (struct sercom_i2c_desc_t *i2c_inst)
 {
     /* Acquire service function lock */
     if (i2c_inst->service_lock) {
-        // Could not accuire lock, service is already being run
+        // Could not acquire lock, service is already being run
         return;
     } else {
         i2c_inst->service_lock = 1;
@@ -507,6 +509,7 @@ void sercom_i2c_service (struct sercom_i2c_desc_t *i2c_inst)
                                                    SERCOM_I2CM_INTENCLR_ERROR);
         }
         
+        i2c_inst->service_lock = 0;
         return;
     }
     
@@ -518,6 +521,7 @@ void sercom_i2c_service (struct sercom_i2c_desc_t *i2c_inst)
     } else if (i2c_inst->wait_for_idle) {
         // The bus still isn't idle, return now so that we don't start
         // doubly waiting for idle.
+        i2c_inst->service_lock = 0;
         return;
     }
     
@@ -525,6 +529,7 @@ void sercom_i2c_service (struct sercom_i2c_desc_t *i2c_inst)
     struct transaction_t *t = transaction_queue_next(&i2c_inst->queue);
     if (t == NULL) {
         // No pending transactions
+        i2c_inst->service_lock = 0;
         return;
     } else if (i2c_inst->sercom->I2CM.STATUS.bit.BUSSTATE == 0x1) {
         // Start the next transaction
@@ -558,7 +563,7 @@ void sercom_i2c_service (struct sercom_i2c_desc_t *i2c_inst)
         // There is a pending transaction but the bus is not idle... eek
         i2c_inst->wait_for_idle = 1;
         // Keep checking if the bus has become idle as often as possible
-        inhibit_sleep();
+        //inhibit_sleep();
     }
     
     i2c_inst->service_lock = 0;

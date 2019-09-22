@@ -79,6 +79,7 @@ void init_sercom_uart (struct sercom_uart_desc_t *descriptor, Sercom *sercom,
         .state = (void*)descriptor
     };
 
+    NVIC_SetPriority(sercom_get_irq_num(instance_num), SERCOM_IRQ_PRIORITY);
     NVIC_EnableIRQ(sercom_get_irq_num(instance_num));
     
     /* Setup Descriptor */
@@ -109,7 +110,8 @@ void init_sercom_uart (struct sercom_uart_desc_t *descriptor, Sercom *sercom,
     sercom->USART.CTRLA.bit.ENABLE = 0b1;
 }
 
-uint16_t sercom_uart_put_string(struct sercom_uart_desc_t *uart, const char *str)
+uint16_t sercom_uart_put_string(struct sercom_uart_desc_t *uart,
+                                const char *str)
 {
     uint16_t i = 0;
     for (; str[i] != '\0'; i++) {
@@ -161,6 +163,44 @@ void sercom_uart_put_string_blocking(struct sercom_uart_desc_t *uart,
             i++;
             carriage_return = 0;
         }
+    }
+    
+    // Make sure that we start transmition right away if there is no transmition
+    // already in progress.
+    sercom_uart_service(uart);
+}
+
+uint16_t sercom_uart_put_bytes(struct sercom_uart_desc_t *uart,
+                               const uint8_t *bytes, uint16_t length)
+{
+    uint16_t i = 0;
+    for (; i < length; i++) {
+        if (circular_buffer_is_full(&uart->out_buffer)) {
+            break;
+        }
+        
+        circular_buffer_push(&uart->out_buffer, (uint8_t)bytes[i]);
+    }
+    
+    // Make sure that we start transmition right away if there is no transmition
+    // already in progress.
+    sercom_uart_service(uart);
+    
+    return i;
+}
+
+void sercom_uart_put_bytes_blocking(struct sercom_uart_desc_t *uart,
+                                    const uint8_t *bytes, uint16_t length)
+{
+    for (uint16_t i = 0; i < length; i++) {
+        // Wait for a character worth of space to become avaliable in the buffer
+        while (circular_buffer_is_full(&uart->out_buffer)) {
+            // Make sure that we aren't waiting for a transaction which is not
+            // in progress.
+            sercom_uart_service(uart);
+        }
+        
+        circular_buffer_push(&uart->out_buffer, bytes[i]);
     }
     
     // Make sure that we start transmition right away if there is no transmition
@@ -244,6 +284,7 @@ void sercom_uart_service (struct sercom_uart_desc_t *uart)
     
     if (circular_buffer_is_empty(&uart->out_buffer)) {
         // No data to be sent
+        uart->service_lock = 0;
         return;
     } else if (uart->use_dma && !dma_chan_is_active(uart->dma_chan)) {
         // A DMA write operation is not in progress
@@ -251,7 +292,7 @@ void sercom_uart_service (struct sercom_uart_desc_t *uart)
         dma_start_circular_buffer_to_static(
                                 &uart->dma_tran, uart->dma_chan,
                                 &uart->out_buffer,
-                                (uint8_t*)&uart->sercom->USART.DATA,
+                                (volatile uint8_t*)&uart->sercom->USART.DATA,
                                 sercom_get_dma_tx_trigger(uart->sercom_instnum),
                                 SERCOM_DMA_TX_PRIORITY);
     } else if (!uart->use_dma && !uart->sercom->USART.INTENSET.bit.DRE) {
@@ -269,28 +310,13 @@ static void sercom_uart_isr (Sercom *sercom, uint8_t inst_num, void *state)
 {
     struct sercom_uart_desc_t *uart = (struct sercom_uart_desc_t*)state;
 
-    // TX
-    if (sercom->USART.INTENSET.bit.DRE && sercom->USART.INTFLAG.bit.DRE) {
-        uint8_t c = '\0';
-        uint8_t empty = circular_buffer_pop(&uart->out_buffer, &c);
-        
-        if (!empty) {
-            // Send next char
-            sercom->USART.DATA.reg = c;
-        } else {
-            // All chars sent, disable DRE interupt
-            sercom->USART.INTENCLR.bit.DRE = 0b1;
-        }
-    }
-
     // RX
     if (sercom->USART.INTFLAG.bit.RXC) {
         uint8_t data = sercom->USART.DATA.reg;
-        uint8_t full = 0;
         
         if (!iscntrl(data) || (data == '\r')) {
             // Should add byte to input buffer
-            full = circular_buffer_try_push(&uart->in_buffer, data);
+            uint8_t full = circular_buffer_try_push(&uart->in_buffer, data);
 
             if (uart->echo) {
                 if (!full && isprint(data)) {
@@ -308,6 +334,20 @@ static void sercom_uart_isr (Sercom *sercom, uint8_t inst_num, void *state)
             if (!empty) {
                 sercom_uart_put_string(uart, "\x1B[1D\x1B[K");
             }
+        }
+    }
+    
+    // TX
+    if (sercom->USART.INTENSET.bit.DRE && sercom->USART.INTFLAG.bit.DRE) {
+        uint8_t c = '\0';
+        uint8_t empty = circular_buffer_pop(&uart->out_buffer, &c);
+        
+        if (!empty) {
+            // Send next char
+            sercom->USART.DATA.reg = c;
+        } else {
+            // All chars sent, disable DRE interupt
+            sercom->USART.INTENCLR.bit.DRE = 0b1;
         }
     }
 

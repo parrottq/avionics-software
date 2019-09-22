@@ -10,7 +10,10 @@
 #include "global.h"
 #include "config.h"
 
+#include "wdt.h"
+#include "gpio.h"
 #include "dma.h"
+#include "adc.h"
 #include "sercom-uart.h"
 #include "sercom-spi.h"
 #include "sercom-i2c.h"
@@ -27,17 +30,24 @@
 #include "cli.h"
 #include "debug-commands.h"
 
+#include "gnss-xa1110.h"
+#include "ms5611.h"
+#include "rn2483.h"
+
+#include "ground.h"
+#include "telemetry.h"
+
 //MARK: Constants
 
 // MARK: Function prototypes
 static void main_loop(void);
+static void test_ext_int(union gpio_pin_t pin, uint8_t value);
 
 // MARK: Variable Definitions
 volatile uint32_t millis;
 volatile uint8_t inhibit_sleep_g;
 
 static uint32_t lastLed_g;
-static uint8_t stat_transaction_id;
 
 // MARK: Hardware Resources from Config File
 #ifdef SPI_SERCOM_INST
@@ -60,6 +70,26 @@ struct sercom_uart_desc_t uart2_g;
 struct sercom_uart_desc_t uart3_g;
 #endif
 
+#ifdef ENABLE_IO_EXPANDER
+struct mcp23s17_desc_t io_expander_g;
+#endif
+
+#ifdef ENABLE_LORA_RADIO
+struct rn2483_desc_t rn2483_g;
+#endif
+
+#ifdef ENABLE_ALTIMETER
+struct ms5611_desc_t altimeter_g;
+#endif
+
+#ifdef ENABLE_GNSS
+struct console_desc_t gnss_console_g;
+#endif
+
+#ifdef ENABLE_GROUND_SERVICE
+struct console_desc_t ground_station_console_g;
+#endif
+
 // Stores 2 ^ TRACE_BUFFER_MAGNITUDE_PACKETS packets.
 // 4 -> 16 packets
 #define TRACE_BUFFER_MAGNITUDE_PACKETS 4
@@ -71,97 +101,122 @@ __attribute__((__aligned__(TRACE_BUFFER_SIZE_BYTES))) uint32_t mtb[TRACE_BUFFER_
 
 
 // MARK: Function Definitions
-static void init_main_clock(void)
+static void init_clocks (void)
 {
-    // Set 1 Flash Wait State for 48MHz, cf tables 20.9 and 35.27 in SAMD21 Datasheet
+    /* Configure a single flash wait state, good for 2.7-3.3v operation at 48MHz */
+    // See section 37.12 of datasheet (NVM Characteristics)
     NVMCTRL->CTRLB.bit.RWS = NVMCTRL_CTRLB_RWS_HALF_Val;
-    // Turn on the digital interface clock
+
+    // Ensure that interface clock for generic clock controler is enabled
     PM->APBAMASK.reg |= PM_APBAMASK_GCLK;
 
-    // Enable XOSC32K clock (External on-board 32.768Hz oscillator)
-    SYSCTRL->XOSC32K.reg = SYSCTRL_XOSC32K_STARTUP( 0x6u ) | // cf table 15.10 of product datasheet in chapter 15.8.6
-            SYSCTRL_XOSC32K_XTALEN | SYSCTRL_XOSC32K_EN32K;
-    SYSCTRL->XOSC32K.bit.ENABLE = 1; // separate call, as described in chapter 15.6.3
-    while (!(SYSCTRL->PCLKSR.reg & SYSCTRL_PCLKSR_XOSC32KRDY)); // Wait for oscillator stabilization
+    /* Enable external 32.768 KHz oscillator */
+    // 1000092μs (32768 OSCULP32K cycles) startupt time, enable crystal,
+    // enable 32.768 KHz output
+    SYSCTRL->XOSC32K.reg = (SYSCTRL_XOSC32K_STARTUP( 0x5 ) |
+                            SYSCTRL_XOSC32K_XTALEN | SYSCTRL_XOSC32K_EN32K);
+    // Enable oscillator (note: enabled must not be set with other bits)
+    SYSCTRL->XOSC32K.bit.ENABLE = 1;
+    // Wait for oscillator stabilization (about 1 second)
+    while (!(SYSCTRL->PCLKSR.reg & SYSCTRL_PCLKSR_XOSC32KRDY));
 
-
-    // Software reset the module to ensure it is re-initialized correctly
+    /* Reset Generic Clock Controller */
     GCLK->CTRL.reg = GCLK_CTRL_SWRST;
-    // Due to synchronization, there is a delay from writing CTRL.SWRST until the reset is complete.
-    // CTRL.SWRST and STATUS.SYNCBUSY will both be cleared when the reset is complete, as described in chapter 13.8.1
-    while ((GCLK->CTRL.reg & GCLK_CTRL_SWRST) && (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY)); // Wait for reset to complete
+    // Wait for reset to complete
+    while (GCLK->CTRL.bit.SWRST);
 
-    // Put XOSC32K as source of Generic Clock Generator 1
-    GCLK->GENDIV.reg = GCLK_GENDIV_ID(1u) ; // Generic Clock Generator 1
-    while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY); // Wait for synchronization
-
-
+    /* Configure Generic Clock Generator 1 */
+    // Set division factor to 0 (no division)
+    GCLK->GENDIV.reg = GCLK_GENDIV_DIV(0) | GCLK_GENDIV_ID(1);
+    // Wait for synchronization
+    while (GCLK->STATUS.bit.SYNCBUSY);
     // Write Generic Clock Generator 1 configuration
-    GCLK->GENCTRL.reg = GCLK_GENCTRL_ID(1u) | // Generic Clock Generator 1
-                        GCLK_GENCTRL_SRC_XOSC32K | // Selected source is External 32KHz Oscillator
-    //                      GCLK_GENCTRL_OE | // Output clock to a pin for tests
-                        GCLK_GENCTRL_GENEN ;
-    while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY); // Wait for synchronization
+    // source from XOSC32K and enable
+    GCLK->GENCTRL.reg = (GCLK_GENCTRL_ID(1) | GCLK_GENCTRL_SRC_XOSC32K |
+                         GCLK_GENCTRL_GENEN);
+    // Wait for synchronization
+    while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY);
 
-    // Set Generic Clock Generator 1 as source for Generic Clock Multiplexer 0 (DFLL48M reference)
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(0u) | // Generic Clock Multiplexer 0
-            GCLK_CLKCTRL_GEN_GCLK1 | // Generic Clock Generator 1 is source
-            GCLK_CLKCTRL_CLKEN;
-    while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY); // Wait for synchronization
+    /* Configure Generic Clock Multiplexer for DFLL48M to use Generic Clock Generator 1 */
+    GCLK->CLKCTRL.reg = (GCLK_CLKCTRL_ID_DFLL48 | GCLK_CLKCTRL_GEN_GCLK1 |
+                         GCLK_CLKCTRL_CLKEN);
+    // Wait for synchronization
+    while (GCLK->STATUS.bit.SYNCBUSY);
 
-    // Enable DFLL48M clock
-    // DFLL Configuration in Closed Loop mode, cf product datasheet chapter 15.6.7.1 - Closed-Loop Operation
-
-    // Remove the OnDemand mode, Bug http://avr32.icgroup.norway.atmel.com/bugzilla/show_bug.cgi?id=9905
+    /* Enable DFLL48M */
+    // Disable On Demand mode before configuration
+    //      see silicon erata section 1.2.1 - Write Access to DFLL Register
     SYSCTRL->DFLLCTRL.bit.ONDEMAND = 0;
-    while (!(SYSCTRL->PCLKSR.reg & SYSCTRL_PCLKSR_DFLLRDY));  // Wait for synchronization
+    // Wait for DFLL48M to be ready
+    while (!SYSCTRL->PCLKSR.bit.DFLLRDY);
 
-    SYSCTRL->DFLLMUL.reg = SYSCTRL_DFLLMUL_CSTEP( 31 ) | // Coarse step is 31, half of the max value
-    SYSCTRL_DFLLMUL_FSTEP( 511 ) | // Fine step is 511, half of the max value
-    SYSCTRL_DFLLMUL_MUL((48000000/32768)) ; // External 32KHz is the reference
-    while (!(SYSCTRL->PCLKSR.reg & SYSCTRL_PCLKSR_DFLLRDY));  // Wait for synchronization
+    /* Configure the DFLL48M */
+    // Configuration for DFLL in Closed Loop mode
+    //      see datasheet section 17.6.7.1.2 - Closed-Loop Operation
 
-    // Write full configuration to DFLL control register
-    SYSCTRL->DFLLCTRL.reg |= SYSCTRL_DFLLCTRL_MODE | // Enable the closed loop mode
-            SYSCTRL_DFLLCTRL_WAITLOCK |
-            SYSCTRL_DFLLCTRL_QLDIS; // Disable Quick lock
-    while (!(SYSCTRL->PCLKSR.reg & SYSCTRL_PCLKSR_DFLLRDY));  // Wait for synchronization
+    // Set course and fine steps to one quarter of their max values (16 and 256)
+    // Configure DFLL multiplication value to generate 48 MHz clock from 32.768
+    // KHz input
+    SYSCTRL->DFLLMUL.reg = (SYSCTRL_DFLLMUL_CSTEP( 16 ) |
+                            SYSCTRL_DFLLMUL_FSTEP( 256 ) |
+                            SYSCTRL_DFLLMUL_MUL(48000000 / 32768));
+    // Wait for DFLL48M to be ready
+    while (!SYSCTRL->PCLKSR.bit.DFLLRDY);
 
+    // Enabled closed loop mode, wait for lock and disable quick lock
+    SYSCTRL->DFLLCTRL.reg |= (SYSCTRL_DFLLCTRL_MODE |
+                              SYSCTRL_DFLLCTRL_WAITLOCK |
+                              SYSCTRL_DFLLCTRL_QLDIS);
+    // Wait for DFLL48M to be ready
+    while (!SYSCTRL->PCLKSR.bit.DFLLRDY);
 
-    // Enable the DFLL
-    SYSCTRL->DFLLCTRL.reg |= SYSCTRL_DFLLCTRL_ENABLE;
-    // Wait for locks flags
-    while ((SYSCTRL->PCLKSR.reg & SYSCTRL_PCLKSR_DFLLLCKC) == 0 || (SYSCTRL->PCLKSR.reg & SYSCTRL_PCLKSR_DFLLLCKF) == 0);
-    while ((SYSCTRL->PCLKSR.reg & SYSCTRL_PCLKSR_DFLLRDY) == 0); // Wait for synchronization
+    // Enable DFLL48M
+    SYSCTRL->DFLLCTRL.bit.ENABLE = 1;
+    // Wait for locks
+    while (!SYSCTRL->PCLKSR.bit.DFLLLCKC || ! SYSCTRL->PCLKSR.bit.DFLLLCKF);
+    // Wait for DFLL48M to be ready
+    while (!SYSCTRL->PCLKSR.bit.DFLLRDY);
 
-
-    // Switch Generic Clock Generator 0 to DFLL48M. CPU will run at 48MHz.
-    GCLK->GENDIV.reg = GCLK_GENDIV_ID(0u); // Generic Clock Generator 0
-    while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY); // Wait for synchronization
-
+    /* Configure Generic Clock Generator 0 */
+    // Source from DFLL48M to run CPU at 48 MHz
+    // Set division factor to 0 (no division)
+    GCLK->GENDIV.reg = GCLK_GENDIV_DIV(0) | GCLK_GENDIV_ID(0);
+    // Wait for synchronization
+    while (GCLK->STATUS.bit.SYNCBUSY);
     // Write Generic Clock Generator 0 configuration
-    GCLK->GENCTRL.reg = GCLK_GENCTRL_ID(0u) | // Generic Clock Generator 0
-    GCLK_GENCTRL_SRC_DFLL48M | // Selected source is DFLL 48MHz
-    //                      GCLK_GENCTRL_OE | // Output clock to a pin for tests
-            GCLK_GENCTRL_IDC | // Set 50/50 duty cycle
-            GCLK_GENCTRL_GENEN ;
-    while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY); // Wait for synchronization
+    // source from DFLL48M, enable improved (50/50) duty cycle and enable
+    GCLK->GENCTRL.reg = (GCLK_GENCTRL_ID(0) | GCLK_GENCTRL_SRC_DFLL48M |
+                         GCLK_GENCTRL_IDC | GCLK_GENCTRL_GENEN);
+    // Wait for synchronization
+    while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY);
 
+    /* Configure OSC8M */
+    // Set Prescaler to generate 8 MHz
+    SYSCTRL->OSC8M.bit.PRESC = SYSCTRL_OSC8M_PRESC_0_Val;
 
-    // Modify PRESCaler value of OSC8M to have 8MHz
-    SYSCTRL->OSC8M.bit.PRESC = SYSCTRL_OSC8M_PRESC_1_Val;
-    SYSCTRL->OSC8M.bit.ONDEMAND = 0;
-
-    // Put OSC8M as source for Generic Clock Generator 3
-    GCLK->GENDIV.reg = GCLK_GENDIV_ID(3u); // Generic Clock Generator 3
-
+    /* Configure Generic Clock Generator 3 */
+    // Set division factor to 0 (no division)
+    GCLK->GENDIV.reg = GCLK_GENDIV_DIV(0) | GCLK_GENDIV_ID(3);
+    // Wait for synchronization
+    while (GCLK->STATUS.bit.SYNCBUSY);
     // Write Generic Clock Generator 3 configuration
-    GCLK->GENCTRL.reg = GCLK_GENCTRL_ID(3u) | // Generic Clock Generator 3
-            GCLK_GENCTRL_SRC_OSC8M | // Selected source is RC OSC 8MHz (already enabled at reset)
-    //                      GCLK_GENCTRL_OE | // Output clock to a pin for tests
-            GCLK_GENCTRL_GENEN ;
+    // source from OSC8M, and enable
+    GCLK->GENCTRL.reg = (GCLK_GENCTRL_ID(3) | GCLK_GENCTRL_SRC_OSC8M |
+                         GCLK_GENCTRL_GENEN);
+    // Wait for synchronization
+    while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY);
 
-    while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY); // Wait for synchronization
+    /* Configure Generic Clock Generator 7 */
+    // Set division factor to 2 (divide by 2^2 = 4)
+    GCLK->GENDIV.reg = GCLK_GENDIV_DIV(2) | GCLK_GENDIV_ID(7);
+    // Wait for synchronization
+    while (GCLK->STATUS.bit.SYNCBUSY);
+    // Write Generic Clock Generator 7 configuration
+    // source from OSCULP32K, and enable
+    GCLK->GENCTRL.reg = (GCLK_GENCTRL_ID(7) | GCLK_GENCTRL_SRC_OSCULP32K |
+                         GCLK_GENCTRL_GENEN);
+    // Wait for synchronization
+    while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY);
 }
 
 
@@ -171,11 +226,6 @@ struct cli_desc_t cli_g;
 
 static inline void init_io (void)
 {
-    // Debug LED
-    PORT->Group[DEBUG_LED_GROUP_NUM].DIRSET.reg = DEBUG_LED_MASK;
-    //PORT->Group[DEBUG_LED_GROUP_NUM].PINCFG[30].bit.DRVSTR = 0b1;
-    PORT->Group[DEBUG_LED_GROUP_NUM].PINCFG[15].bit.DRVSTR = 0b1;
-
     // SPI
     PORT->Group[1].PMUX[6].bit.PMUXE = 0x2;     // MOSI (Pad 0)
     PORT->Group[1].PINCFG[12].bit.PMUXEN = 0b1;
@@ -191,15 +241,27 @@ static inline void init_io (void)
     PORT->Group[1].PINCFG[17].bit.PMUXEN = 0b1;
 
     // UART 0
+    PORT->Group[0].PMUX[2].bit.PMUXE = 0x3;     // TX Sercom 0 Pad 0
+    PORT->Group[0].PINCFG[4].bit.PMUXEN = 0b1;
+    PORT->Group[0].PMUX[2].bit.PMUXO = 0x3;     // RX Sercom 0 Pad 1
+    PORT->Group[0].PINCFG[5].bit.PMUXEN = 0b1;
 
     // UART 1
+    PORT->Group[0].PMUX[8].bit.PMUXE = 0x2;     // TX Sercom 1 Pad 0
+    PORT->Group[0].PINCFG[16].bit.PMUXEN = 0b1;
+    PORT->Group[0].PMUX[8].bit.PMUXO = 0x2;     // RX Sercom 1 Pad 1
+    PORT->Group[0].PINCFG[17].bit.PMUXEN = 0b1;
 
     // UART 2
+    PORT->Group[0].PMUX[6].bit.PMUXE = 0x2;     // TX Sercom 2 Pad 0
+    PORT->Group[0].PINCFG[12].bit.PMUXEN = 0b1;
+    PORT->Group[0].PMUX[6].bit.PMUXO = 0x2;     // RX Sercom 2 Pad 1
+    PORT->Group[0].PINCFG[13].bit.PMUXEN = 0b1;
 
     // UART 3
-    PORT->Group[0].PMUX[11].bit.PMUXE = 0x2;
+    PORT->Group[0].PMUX[11].bit.PMUXE = 0x2;    // TX Sercom 3 Pad 0
     PORT->Group[0].PINCFG[22].bit.PMUXEN = 0b1;
-    PORT->Group[0].PMUX[11].bit.PMUXO = 0x2;
+    PORT->Group[0].PMUX[11].bit.PMUXO = 0x2;    // RX Sercom 3 Pad 1
     PORT->Group[0].PINCFG[23].bit.PMUXEN = 0b1;
 
     // USB
@@ -209,14 +271,15 @@ static inline void init_io (void)
     PORT->Group[0].PINCFG[25].bit.PMUXEN = 0b1;
 
     // IO Expander CS pin
-    PORT->Group[0].DIRSET.reg = PORT_PA28;
-    PORT->Group[0].OUTSET.reg = PORT_PA28;
+    PORT->Group[IO_EXPANDER_CS_PIN_GROUP].DIRSET.reg = IO_EXPANDER_CS_PIN_MASK;
+    PORT->Group[IO_EXPANDER_CS_PIN_GROUP].OUTSET.reg = IO_EXPANDER_CS_PIN_MASK;
 }
 
 int main(void)
 {
-    init_main_clock();
+    init_clocks();
     SysTick_Config(48000); // Enable SysTick for an interupt every millisecond
+    NVIC_SetPriority (SysTick_IRQn, 0); // Give SysTick highest priority
 
     // Load ADC factory calibration values
     // ADC Bias Calibration
@@ -254,7 +317,7 @@ int main(void)
 #define SPI_TX_DMA_CHAN -1
 #endif
     init_sercom_spi(&spi_g, SPI_SERCOM_INST, F_CPU, GCLK_CLKCTRL_GEN_GCLK0,
-        SPI_TX_DMA_CHAN, SPI_RX_DMA_CHAN);
+                    SPI_TX_DMA_CHAN, SPI_RX_DMA_CHAN);
 #endif
 
     // Init I2C
@@ -307,6 +370,38 @@ int main(void)
                      GCLK_CLKCTRL_GEN_GCLK0, UART3_DMA_CHAN, UART3_ECHO);
 #endif
 
+    // Init ADC
+#ifdef ENABLE_ADC
+#ifndef ADC_DMA_CHAN
+#define ADC_DMA_CHAN -1
+#endif
+#ifndef ADC_TC
+#define ADC_TC NULL
+#endif
+#ifndef ADC_EVENT_CHAN
+#define ADC_EVENT_CHAN -1
+#endif
+    uint32_t chan_mask = (EXTERNAL_ANALOG_MASK |
+                          (1 << ADC_INPUTCTRL_MUXPOS_TEMP_Val) |
+                          (1 << ADC_INPUTCTRL_MUXPOS_SCALEDCOREVCC) |
+                          (1 << ADC_INPUTCTRL_MUXPOS_SCALEDIOVCC));
+    init_adc(GCLK_CLKCTRL_GEN_GCLK3, 8000000UL, chan_mask, ADC_PERIOD,
+             ADC_SOURCE_IMPEDENCE, ADC_DMA_CHAN);
+#endif
+
+    // Init Altimeter
+#ifdef ENABLE_ALTIMETER
+    init_ms5611(&altimeter_g, &i2c_g, ALTIMETER_CSB, ALTIMETER_PERIOD, 1);
+#endif
+
+    // Init GNSS
+#ifdef ENABLE_GNSS
+    init_console(&gnss_console_g, &GNSS_UART, '\r');
+    init_gnss_xa1110(&gnss_console_g);
+#endif
+
+
+
     // Init USB
 #ifdef ENABLE_USB
     usb_init();
@@ -329,7 +424,6 @@ int main(void)
              debug_commands_num_funcs);
 #endif
 
-
     // Init SD Card
     init_sd_card();
 
@@ -340,21 +434,82 @@ int main(void)
     while (!sercom_spi_transaction_done(&spi_g, stat_transaction_id));
     sercom_spi_clear_transaction(&spi_g, stat_transaction_id);
 
+    // GPIO
+#ifdef ENABLE_IO_EXPANDER
+    init_mcp23s17(&io_expander_g, 0, &spi_g, 100, IO_EXPANDER_CS_PIN_MASK,
+                  IO_EXPANDER_CS_PIN_GROUP);
+    init_gpio(GCLK_CLKCTRL_GEN_GCLK0, &io_expander_g, IO_EXPANDER_INT_PIN);
+#else
+    init_gpio(GCLK_CLKCTRL_GEN_GCLK0, NULL, 0);
+#endif
+
+    gpio_set_pin_mode(DEBUG0_LED_PIN, GPIO_PIN_OUTPUT_TOTEM);
+    gpio_set_pin_mode(DEBUG1_LED_PIN, GPIO_PIN_OUTPUT_TOTEM);
+    gpio_set_pin_mode(STAT_R_LED_PIN, GPIO_PIN_OUTPUT_TOTEM);
+    gpio_set_pin_mode(STAT_G_LED_PIN, GPIO_PIN_OUTPUT_TOTEM);
+
+    gpio_set_pin_mode(MCP23S17_PIN_FOR(MCP23S17_PORT_B, 7), GPIO_PIN_INPUT);
+    gpio_set_pull(MCP23S17_PIN_FOR(MCP23S17_PORT_B, 7), GPIO_PULL_HIGH);
+
+    gpio_enable_interupt(MCP23S17_PIN_FOR(MCP23S17_PORT_B, 7),
+                         GPIO_INTERRUPT_FALLING_EDGE, 0, test_ext_int);
+
+//    gpio_set_pin_mode(GPIO_PIN_FOR(PIN_PB30), GPIO_PIN_INPUT);
+//    gpio_set_pull(GPIO_PIN_FOR(PIN_PB30), GPIO_PULL_HIGH);
+//
+//    gpio_enable_interupt(GPIO_PIN_FOR(PIN_PB30), GPIO_INTERRUPT_LOW, 1,
+//                         test_ext_int);
+
+    gpio_set_output(STAT_G_LED_PIN, 1);
+    gpio_set_output(DEBUG1_LED_PIN, 1);
+
+    // LoRa Radio
+#ifdef ENABLE_LORA_RADIO
+    init_rn2483(&rn2483_g, &LORA_UART, LORA_FREQ, LORA_POWER,
+                LORA_SPREADING_FACTOR, LORA_CODING_RATE, LORA_BANDWIDTH,
+                LORA_CRC, LORA_INVERT_IQ, LORA_SYNC_WORD);
+#endif
+
+    // Ground station console
+#ifdef ENABLE_GROUND_SERVICE
+#ifdef GROUND_UART
+    init_console(&ground_station_console_g, &GROUND_UART, '\r');
+#elif defined ENABLE_USB
+    init_console(&ground_station_console_g, NULL, '\r');
+#endif
+    init_ground_service(&ground_station_console_g, &rn2483_g);
+#endif
+
+    // Telemetry service
+#ifdef ENABLE_TELEMETRY_SERVICE
+    init_telemetry_service(&rn2483_g, &altimeter_g, TELEMETRY_RATE);
+#endif
+
+
+    // Start Watchdog Timer
+    //init_wdt(GCLK_CLKCTRL_GEN_GCLK7, 14, 0);
 
     // Main Loop
     for (;;) {
+
+        // Pat the watchdog
+        wdt_pat();
+
+        // Run the main loop
         main_loop();
+
+        // Sleep if sleep is not inhibited
         if (!inhibit_sleep_g) {
             __WFI();
         }
     }
 
-	return 0; // never reached
+    return 0; // never reached
 }
 
 #define STAT_PERIOD 1500
 
-static void main_loop ()
+static void main_loop (void)
 {
     // SD Card Test
     uint32_t blockaddr = 0x00000000;
@@ -366,40 +521,65 @@ static void main_loop ()
 
     static uint32_t period = 1000;
 
-    if (PORT->Group[0].IN.reg & PORT_PA15) {
-        period = 1000;
-    } else {
-        //period = 100;
-    }
-
     if ((millis - lastLed_g) >= period) {
         lastLed_g = millis;
-        PORT->Group[DEBUG_LED_GROUP_NUM].OUTTGL.reg = DEBUG_LED_MASK;
+        gpio_toggle_output(DEBUG0_LED_PIN);
     }
 
     static uint32_t last_stat;
-    static uint8_t stat_buffer[] ={0b01000000, 0x12, 0b11000000};
-
-    if (sercom_spi_transaction_done(&spi_g, stat_transaction_id) &&
-        ((millis - last_stat) >= STAT_PERIOD)) {
+    if (((millis - last_stat) >= STAT_PERIOD)) {
         last_stat = millis;
-        sercom_spi_clear_transaction(&spi_g, stat_transaction_id);
-
-        stat_buffer[2] ^= 0xE0;
-        sercom_spi_start(&spi_g, &stat_transaction_id, 8000000UL, 0, PORT_PA28,
-                         stat_buffer, 3, NULL, 0);
+        gpio_toggle_output(STAT_R_LED_PIN);
+        gpio_toggle_output(STAT_G_LED_PIN);
     }
+    //gpio_set_output(DEBUG1_LED_PIN, gpio_get_input(MCP23S17_PIN_FOR(MCP23S17_PORT_B, 7)));
 
 #ifdef ENABLE_CONSOLE
     console_service(&console_g);
 #endif
 
+#ifdef ENABLE_GROUND_SERVICE
+    console_service(&ground_station_console_g);
+#endif
+
 #ifdef I2C_SERCOM_INST
-    //sercom_i2c_service(&i2c_g);
+    sercom_i2c_service(&i2c_g);
+#endif
+
+#ifdef ENABLE_IO_EXPANDER
+    mcp23s17_service(&io_expander_g);
+#endif
+
+#ifdef ENABLE_ADC
+    adc_service();
+#endif
+
+#ifdef ENABLE_ALTIMETER
+    ms5611_service(&altimeter_g);
+#endif
+
+#ifdef ENABLE_GNSS
+    console_service(&gnss_console_g);
+#endif
+
+#ifdef ENABLE_LORA_RADIO
+    rn2483_service(&rn2483_g);
+#endif
+
+#ifdef ENABLE_GROUND_SERVICE
+    ground_service();
+#endif
+
+#ifdef ENABLE_TELEMETRY_SERVICE
+    telemetry_service();
 #endif
 }
 
 
+static void test_ext_int(union gpio_pin_t pin, uint8_t value)
+{
+
+}
 
 
 /* Interupt Service Routines */
@@ -414,13 +594,18 @@ void HardFault_Handler(void)
     // loop below.
     MTB->MASTER.reg = 0x00000000;
 
+    uint8_t port = DEBUG0_LED_PIN.internal.port;
+    uint32_t mask = (1 << DEBUG0_LED_PIN.internal.pin);
+
     for (;;) {
-        PORT->Group[DEBUG_LED_GROUP_NUM].OUTSET.reg = DEBUG_LED_MASK;
+
+
+        PORT->Group[port].OUTSET.reg = mask;
         uint64_t n = 1000000;
         while (n--) {
             asm volatile ("");
         }
-        PORT->Group[DEBUG_LED_GROUP_NUM].OUTCLR.reg = DEBUG_LED_MASK;
+        PORT->Group[port].OUTCLR.reg = mask;
         n = 10000000;
         while (n--) {
             asm volatile ("");

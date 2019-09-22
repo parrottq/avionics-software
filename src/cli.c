@@ -2,9 +2,9 @@
  * @file cli.c
  * @desc Provides a CLI on a console for debugging purposes.
  * @author Samuel Dewan
- * @date 2019-09-21
+ * @date 2019-01-21
  * Last Author: Samuel Dewan
- * Last Edited On: 2019-09-23
+ * Last Edited On: 2019-08-25
  */
 
 #include "cli.h"
@@ -18,9 +18,36 @@ static const char *cli_unkown_str_0 = "Unkown command \"";
 static const char *cli_unkown_str_1 = "\"\n";
 
 
-static void cli_help (uint8_t argc, char **argv, struct console_desc_t *console)
+static void cli_help (uint8_t argc, char **argv, struct console_desc_t *console,
+                      struct cli_desc_t *cli)
 {
+    if (argc > 2) {
+        console_send_str(console, "Use \"help\" to list all commands or "
+                                  "\"help <command>\" to get information on a "
+                                  "specific command.\n");
+        return;
+    } else if (argc == 2) {
+        // Get help for a specific command
+        for (uint8_t i = 0; i < cli->num_functions; i++) {
+            if (!strcasecmp(argv[1], cli->functions[i].name)) {
+                console_send_str(console, cli->functions[i].help_string);
+                console_send_str(console, "\n");
+                return;
+            }
+        }
+        console_send_str(console, cli_unkown_str_0);
+        console_send_str(console, argv[1]);
+        console_send_str(console, cli_unkown_str_1);
+    } else {
+        console_send_str(console, "Use \"help <command>\" to get information "
+                                  "on a specific command.\n");
+    }
     
+    console_send_str(console, "\nAvaliable Commands:\n");
+    for (uint8_t i = 0; i < cli->num_functions; i++) {
+        console_send_str(console, cli->functions[i].name);
+        console_send_str(console, "\n");
+    }
 }
 
 static void cli_line_callback (char *line, struct console_desc_t *console,
@@ -35,7 +62,8 @@ static void cli_line_callback (char *line, struct console_desc_t *console,
     }
     
     /* Create a an array of pointers to each token */
-    char *args[num_args];
+    // Array is one larger to leave room for NULL pointer
+    char *args[num_args + 1];
     for (uint16_t i = 0; (args[i] = strsep(&line, " ")) != NULL; i++);
    
     /* Call the specified function */
@@ -45,7 +73,7 @@ static void cli_line_callback (char *line, struct console_desc_t *console,
         command_found = 1;
     } else if (!strcasecmp(args[0], "help")) {
         // Print the help string for a function
-        cli_help(num_args, args, console);
+        cli_help(num_args, args, console, cli);
         command_found = 1;
     } else if (!strcasecmp(args[0], "clear")) {
         // Clear the screen

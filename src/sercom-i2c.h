@@ -94,7 +94,7 @@ struct sercom_i2c_transaction_t {
          *  recieve stages */
         struct {
             /** The buffer from which data is sent. */
-            uint8_t *out_buffer;
+            uint8_t const* out_buffer;
             /** The buffer into which recieved data is placed. */
             uint8_t *in_buffer;
             /** The number of bytes to be sent. */
@@ -216,7 +216,7 @@ extern void init_sercom_i2c(struct sercom_i2c_desc_t *descriptor,
  */
 extern uint8_t sercom_i2c_start_generic(struct sercom_i2c_desc_t *i2c_inst,
                                         uint8_t *trans_id, uint8_t dev_address,
-                                        uint8_t *out_buffer,
+                                        uint8_t const* out_buffer,
                                         uint16_t out_length, uint8_t *in_buffer,
                                         uint16_t in_length);
 
@@ -312,7 +312,7 @@ extern uint8_t sercom_i2c_clear_transaction(struct sercom_i2c_desc_t *i2c_inst,
  *
  *  @return 0 If the device is not avaliable, a possitive number otherwise
  */
-extern uint8_t sercom_i2c_device_avaliable(struct sercom_i2c_desc_t *i2c_inst,
+extern uint8_t sercom_i2c_device_available(struct sercom_i2c_desc_t *i2c_inst,
                                            uint8_t trans_id, uint8_t address);
 
 /**
