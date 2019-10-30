@@ -18,8 +18,6 @@
 #include "sercom-spi.h"
 #include "sercom-i2c.h"
 
-#include "sd.h"
-
 #ifdef ID_USB
 #include "usb/usb.h"
 #else
@@ -37,11 +35,12 @@
 #include "ground.h"
 #include "telemetry.h"
 
+#include "sd.h"
+
 //MARK: Constants
 
 // MARK: Function prototypes
 static void main_loop(void);
-static void test_ext_int(union gpio_pin_t pin, uint8_t value);
 
 // MARK: Variable Definitions
 volatile uint32_t millis;
@@ -107,11 +106,11 @@ static void init_clocks (void)
     // See section 37.12 of datasheet (NVM Characteristics)
     NVMCTRL->CTRLB.bit.RWS = NVMCTRL_CTRLB_RWS_HALF_Val;
 
-    // Ensure that interface clock for generic clock controler is enabled
+    // Ensure that interface clock for generic clock controller is enabled
     PM->APBAMASK.reg |= PM_APBAMASK_GCLK;
 
     /* Enable external 32.768 KHz oscillator */
-    // 1000092μs (32768 OSCULP32K cycles) startupt time, enable crystal,
+    // 1000092μs (32768 OSCULP32K cycles) startup time, enable crystal,
     // enable 32.768 KHz output
     SYSCTRL->XOSC32K.reg = (SYSCTRL_XOSC32K_STARTUP( 0x5 ) |
                             SYSCTRL_XOSC32K_XTALEN | SYSCTRL_XOSC32K_EN32K);
@@ -145,7 +144,7 @@ static void init_clocks (void)
 
     /* Enable DFLL48M */
     // Disable On Demand mode before configuration
-    //      see silicon erata section 1.2.1 - Write Access to DFLL Register
+    //      see silicon errata section 1.2.1 - Write Access to DFLL Register
     SYSCTRL->DFLLCTRL.bit.ONDEMAND = 0;
     // Wait for DFLL48M to be ready
     while (!SYSCTRL->PCLKSR.bit.DFLLRDY);
@@ -227,58 +226,62 @@ struct cli_desc_t cli_g;
 static inline void init_io (void)
 {
     // SPI
-    PORT->Group[1].PMUX[6].bit.PMUXE = 0x2;     // MOSI (Pad 0)
-    PORT->Group[1].PINCFG[12].bit.PMUXEN = 0b1;
-    PORT->Group[1].PMUX[6].bit.PMUXO = 0x2;     // SCK (Pad 1)
-    PORT->Group[1].PINCFG[13].bit.PMUXEN = 0b1;
-    PORT->Group[1].PMUX[7].bit.PMUXE = 0x2;     // MISO (Pad 2)
-    PORT->Group[1].PINCFG[14].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[1].PMUX[6].bit.PMUXE = 0x2;     // MOSI (Pad 0)
+    PORT_IOBUS->Group[1].PINCFG[12].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[1].PMUX[6].bit.PMUXO = 0x2;     // SCK (Pad 1)
+    PORT_IOBUS->Group[1].PINCFG[13].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[1].PMUX[7].bit.PMUXE = 0x2;     // MISO (Pad 2)
+    PORT_IOBUS->Group[1].PINCFG[14].bit.PMUXEN = 0b1;
 
     // I2C
-    PORT->Group[1].PMUX[8].bit.PMUXE = 0x2;     // SDA (Pad 0)
-    PORT->Group[1].PINCFG[16].bit.PMUXEN = 0b1;
-    PORT->Group[1].PMUX[8].bit.PMUXO = 0x2;     // SCL (Pad 1)
-    PORT->Group[1].PINCFG[17].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[1].PMUX[8].bit.PMUXE = 0x2;     // SDA (Pad 0)
+    PORT_IOBUS->Group[1].PINCFG[16].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[1].PMUX[8].bit.PMUXO = 0x2;     // SCL (Pad 1)
+    PORT_IOBUS->Group[1].PINCFG[17].bit.PMUXEN = 0b1;
 
     // UART 0
-    PORT->Group[0].PMUX[2].bit.PMUXE = 0x3;     // TX Sercom 0 Pad 0
-    PORT->Group[0].PINCFG[4].bit.PMUXEN = 0b1;
-    PORT->Group[0].PMUX[2].bit.PMUXO = 0x3;     // RX Sercom 0 Pad 1
-    PORT->Group[0].PINCFG[5].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[0].PMUX[2].bit.PMUXE = 0x3;     // TX Sercom 0 Pad 0
+    PORT_IOBUS->Group[0].PINCFG[4].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[0].PMUX[2].bit.PMUXO = 0x3;     // RX Sercom 0 Pad 1
+    PORT_IOBUS->Group[0].PINCFG[5].bit.PMUXEN = 0b1;
 
     // UART 1
-    PORT->Group[0].PMUX[8].bit.PMUXE = 0x2;     // TX Sercom 1 Pad 0
-    PORT->Group[0].PINCFG[16].bit.PMUXEN = 0b1;
-    PORT->Group[0].PMUX[8].bit.PMUXO = 0x2;     // RX Sercom 1 Pad 1
-    PORT->Group[0].PINCFG[17].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[0].PMUX[8].bit.PMUXE = 0x2;     // TX Sercom 1 Pad 0
+    PORT_IOBUS->Group[0].PINCFG[16].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[0].PMUX[8].bit.PMUXO = 0x2;     // RX Sercom 1 Pad 1
+    PORT_IOBUS->Group[0].PINCFG[17].bit.PMUXEN = 0b1;
 
     // UART 2
-    PORT->Group[0].PMUX[6].bit.PMUXE = 0x2;     // TX Sercom 2 Pad 0
-    PORT->Group[0].PINCFG[12].bit.PMUXEN = 0b1;
-    PORT->Group[0].PMUX[6].bit.PMUXO = 0x2;     // RX Sercom 2 Pad 1
-    PORT->Group[0].PINCFG[13].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[0].PMUX[6].bit.PMUXE = 0x2;     // TX Sercom 2 Pad 0
+    PORT_IOBUS->Group[0].PINCFG[12].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[0].PMUX[6].bit.PMUXO = 0x2;     // RX Sercom 2 Pad 1
+    PORT_IOBUS->Group[0].PINCFG[13].bit.PMUXEN = 0b1;
 
     // UART 3
-    PORT->Group[0].PMUX[11].bit.PMUXE = 0x2;    // TX Sercom 3 Pad 0
-    PORT->Group[0].PINCFG[22].bit.PMUXEN = 0b1;
-    PORT->Group[0].PMUX[11].bit.PMUXO = 0x2;    // RX Sercom 3 Pad 1
-    PORT->Group[0].PINCFG[23].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[0].PMUX[11].bit.PMUXE = 0x2;    // TX Sercom 3 Pad 0
+    PORT_IOBUS->Group[0].PINCFG[22].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[0].PMUX[11].bit.PMUXO = 0x2;    // RX Sercom 3 Pad 1
+    PORT_IOBUS->Group[0].PINCFG[23].bit.PMUXEN = 0b1;
 
     // USB
-    PORT->Group[0].PMUX[12].bit.PMUXE = 0x6;     // D-
-    PORT->Group[0].PINCFG[24].bit.PMUXEN = 0b1;
-    PORT->Group[0].PMUX[12].bit.PMUXO = 0x6;     // D+
-    PORT->Group[0].PINCFG[25].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[0].PMUX[12].bit.PMUXE = 0x6;     // D-
+    PORT_IOBUS->Group[0].PINCFG[24].bit.PMUXEN = 0b1;
+    PORT_IOBUS->Group[0].PMUX[12].bit.PMUXO = 0x6;     // D+
+    PORT_IOBUS->Group[0].PINCFG[25].bit.PMUXEN = 0b1;
 
     // IO Expander CS pin
-    PORT->Group[IO_EXPANDER_CS_PIN_GROUP].DIRSET.reg = IO_EXPANDER_CS_PIN_MASK;
-    PORT->Group[IO_EXPANDER_CS_PIN_GROUP].OUTSET.reg = IO_EXPANDER_CS_PIN_MASK;
+    PORT_IOBUS->Group[IO_EXPANDER_CS_PIN_GROUP].DIRSET.reg = IO_EXPANDER_CS_PIN_MASK;
+    PORT_IOBUS->Group[IO_EXPANDER_CS_PIN_GROUP].OUTSET.reg = IO_EXPANDER_CS_PIN_MASK;
+
+    // SD CS pin
+    PORT_IOBUS->Group[SD_CS_PIN_GROUP].DIRSET.reg = SD_CS_PIN_MASK;
+    PORT_IOBUS->Group[SD_CS_PIN_GROUP].OUTSET.reg = SD_CS_PIN_MASK;
 }
 
 int main(void)
 {
     init_clocks();
-    SysTick_Config(48000); // Enable SysTick for an interupt every millisecond
+    SysTick_Config(48000); // Enable SysTick for an interrupt every millisecond
     NVIC_SetPriority (SysTick_IRQn, 0); // Give SysTick highest priority
 
     // Load ADC factory calibration values
@@ -386,7 +389,7 @@ int main(void)
                           (1 << ADC_INPUTCTRL_MUXPOS_SCALEDCOREVCC) |
                           (1 << ADC_INPUTCTRL_MUXPOS_SCALEDIOVCC));
     init_adc(GCLK_CLKCTRL_GEN_GCLK3, 8000000UL, chan_mask, ADC_PERIOD,
-             ADC_SOURCE_IMPEDENCE, ADC_DMA_CHAN);
+             ADC_SOURCE_IMPEDANCE, ADC_DMA_CHAN);
 #endif
 
     // Init Altimeter
@@ -424,16 +427,6 @@ int main(void)
              debug_commands_num_funcs);
 #endif
 
-    // Init SD Card
-    init_sd_card();
-
-    // SPI Test
-    uint8_t message_io_dir[] = {0b01000000, 0x00, 0x0};
-    sercom_spi_start(&spi_g, &stat_transaction_id, 8000000UL, 0, PORT_PA28,
-                     message_io_dir, 3, NULL, 0);
-    while (!sercom_spi_transaction_done(&spi_g, stat_transaction_id));
-    sercom_spi_clear_transaction(&spi_g, stat_transaction_id);
-
     // GPIO
 #ifdef ENABLE_IO_EXPANDER
     init_mcp23s17(&io_expander_g, 0, &spi_g, 100, IO_EXPANDER_CS_PIN_MASK,
@@ -448,20 +441,7 @@ int main(void)
     gpio_set_pin_mode(STAT_R_LED_PIN, GPIO_PIN_OUTPUT_TOTEM);
     gpio_set_pin_mode(STAT_G_LED_PIN, GPIO_PIN_OUTPUT_TOTEM);
 
-    gpio_set_pin_mode(MCP23S17_PIN_FOR(MCP23S17_PORT_B, 7), GPIO_PIN_INPUT);
-    gpio_set_pull(MCP23S17_PIN_FOR(MCP23S17_PORT_B, 7), GPIO_PULL_HIGH);
-
-    gpio_enable_interupt(MCP23S17_PIN_FOR(MCP23S17_PORT_B, 7),
-                         GPIO_INTERRUPT_FALLING_EDGE, 0, test_ext_int);
-
-//    gpio_set_pin_mode(GPIO_PIN_FOR(PIN_PB30), GPIO_PIN_INPUT);
-//    gpio_set_pull(GPIO_PIN_FOR(PIN_PB30), GPIO_PULL_HIGH);
-//
-//    gpio_enable_interupt(GPIO_PIN_FOR(PIN_PB30), GPIO_INTERRUPT_LOW, 1,
-//                         test_ext_int);
-
     gpio_set_output(STAT_G_LED_PIN, 1);
-    gpio_set_output(DEBUG1_LED_PIN, 1);
 
     // LoRa Radio
 #ifdef ENABLE_LORA_RADIO
@@ -485,7 +465,10 @@ int main(void)
     init_telemetry_service(&rn2483_g, &altimeter_g, TELEMETRY_RATE);
 #endif
 
-
+    // Initialize SD Card
+    gpio_set_pin_mode(GPIO_7, GPIO_PIN_OUTPUT_TOTEM);
+    gpio_set_output(GPIO_7, 1);
+    init_sd_card();
     // Start Watchdog Timer
     //init_wdt(GCLK_CLKCTRL_GEN_GCLK7, 14, 0);
 
@@ -511,13 +494,12 @@ int main(void)
 
 static void main_loop (void)
 {
-    // SD Card Test
-    uint32_t blockaddr = 0x00000000;
-    uint8_t data[] = {0xfe, 0x48, 0x45, 0x4C, 0x4C, 0x4F};
-    write_block(blockaddr, data);
-    write_block(blockaddr, data);
-    write_block(blockaddr, data);
-    // END SD Card Test
+
+    // SD CARD TEST
+    /* uint32_t blockaddr = 0x00000000; */
+    /* uint8_t data[] = {0x48, 0x49, 0x20, 0x53, 0x41, 0x4D, 0x0A}; */
+    /* write_block(blockaddr, data); */
+    // END SD CARD TEST
 
     static uint32_t period = 1000;
 
@@ -532,7 +514,6 @@ static void main_loop (void)
         gpio_toggle_output(STAT_R_LED_PIN);
         gpio_toggle_output(STAT_G_LED_PIN);
     }
-    //gpio_set_output(DEBUG1_LED_PIN, gpio_get_input(MCP23S17_PIN_FOR(MCP23S17_PORT_B, 7)));
 
 #ifdef ENABLE_CONSOLE
     console_service(&console_g);
@@ -576,13 +557,7 @@ static void main_loop (void)
 }
 
 
-static void test_ext_int(union gpio_pin_t pin, uint8_t value)
-{
-
-}
-
-
-/* Interupt Service Routines */
+/* Interrupt Service Routines */
 RAMFUNC void SysTick_Handler(void)
 {
     millis++;
