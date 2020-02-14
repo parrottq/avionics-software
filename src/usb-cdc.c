@@ -3,14 +3,15 @@
  * @desc USB CDC interface
  * @author Samuel Dewan
  * @date 2019-11-17
- * Last Author: Samuel Dewan
- * Last Edited On: 2019-11-30
+ * Last Author: Quinn Parrott
+ * Last Edited On: 2020-02-13
  */
 
 #include "usb-cdc.h"
 
 #include "usb-cdc-standard.h"
 #include "usb.h"
+#include "usb-address.h"
 
 #include "circular-buffer.h"
 
