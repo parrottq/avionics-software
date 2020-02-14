@@ -18,56 +18,61 @@
 #define USB_CDC_NOTIFICATION_EP_SIZE    64
 #define USB_CDC_DATA_EP_SIZE            64
 
+/* USB interface constants */
+enum {
 #ifdef ENABLE_USB_CDC_PORT_0
-#define USB_CDC_FIRST_INTERFACE_0 0
-#define USB_CDC_NOTIFICATION_ENDPOINT_0 1
-#define USB_CDC_DATA_IN_ENDPOINT_0  2
-#define USB_CDC_DATA_OUT_ENDPOINT_0 2
+    USB_INTERFACE_CDC_CONTROL_0,
+    USB_INTERFACE_CDC_DATA_0,
 #endif
-
 #ifdef ENABLE_USB_CDC_PORT_1
-#define USB_CDC_FIRST_INTERFACE_1 2
-#define USB_CDC_NOTIFICATION_ENDPOINT_1 3
-#define USB_CDC_DATA_IN_ENDPOINT_1  4
-#define USB_CDC_DATA_OUT_ENDPOINT_1 4
+    USB_INTERFACE_CDC_CONTROL_1,
+    USB_INTERFACE_CDC_DATA_1,
 #endif
-
 #ifdef ENABLE_USB_CDC_PORT_2
-#define USB_CDC_FIRST_INTERFACE_2 4
-#define USB_CDC_NOTIFICATION_ENDPOINT_2 5
-#define USB_CDC_DATA_IN_ENDPOINT_2  6
-#define USB_CDC_DATA_OUT_ENDPOINT_2 6
+    USB_INTERFACE_CDC_CONTROL_2,
+    USB_INTERFACE_CDC_DATA_2,
 #endif
 
+    /* Number of interfaces */
+    USB_INTERFACE_COUNT
+};
+
+/* USB endpoints in */
+enum {
+    USB_ENDPOINT_IN_ZERO,
 #ifdef ENABLE_USB_CDC_PORT_0
+    USB_CDC_NOTIFICATION_ENDPOINT_0,
+    USB_CDC_DATA_IN_ENDPOINT_0,
+#endif
 #ifdef ENABLE_USB_CDC_PORT_1
+    USB_CDC_NOTIFICATION_ENDPOINT_1,
+    USB_CDC_DATA_IN_ENDPOINT_1,
+#endif
 #ifdef ENABLE_USB_CDC_PORT_2
-#define USB_CDC_NUM_PORTS  3       // 0, 1, 2
-#else
-#define USB_CDC_NUM_PORTS  2       // 0, 1
-#endif // ENABLE_USB_CDC_INTERFACE_2
-#else
-#ifdef ENABLE_USB_CDC_PORT_2
-#define USB_CDC_NUM_PORTS  2       // 0, 2
-#else
-#define USB_CDC_NUM_PORTS  1       // 0,
-#endif // ENABLE_USB_CDC_INTERFACE_2
-#endif // ENABLE_USB_CDC_INTERFACE_1
-#else
+    USB_CDC_NOTIFICATION_ENDPOINT_2,
+    USB_CDC_DATA_IN_ENDPOINT_2,
+#endif
+
+    /* Number of in endpoints */
+    USB_ENDPOINT_IN_COUNT
+};
+
+/* USB endpoints out */
+enum {
+    USB_ENDPOINT_OUT_ZERO,
+#ifdef ENABLE_USB_CDC_PORT_0
+    USB_CDC_DATA_OUT_ENDPOINT_0,
+#endif
 #ifdef ENABLE_USB_CDC_PORT_1
+    USB_CDC_DATA_OUT_ENDPOINT_1,
+#endif
 #ifdef ENABLE_USB_CDC_PORT_2
-#define USB_CDC_NUM_PORTS  2       // 1, 2
-#else
-#define USB_CDC_NUM_PORTS  1       // 1
-#endif // ENABLE_USB_CDC_INTERFACE_2
-#else
-#ifdef ENABLE_USB_CDC_PORT_2
-#define USB_CDC_NUM_PORTS  1       // 2
-#else
-#define USB_CDC_NUM_PORTS  0       //
-#endif // ENABLE_USB_CDC_INTERFACE_2
-#endif // ENABLE_USB_CDC_INTERFACE_1
-#endif // ENABLE_USB_CDC_INTERFACE_0
+    USB_CDC_DATA_OUT_ENDPOINT_2,
+#endif
+
+    /* Number of in endpoints */
+    USB_ENDPOINT_OUT_COUNT
+};
 
 #ifdef ENABLE_USB_CDC_PORT_2
 #define USB_CDC_HIGHEST_PORT 2
