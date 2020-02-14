@@ -143,6 +143,9 @@ extern struct sercom_uart_desc_t uart3_g;
 /* Define to enable echo on USB CDC port 2 */
 //#define USB_CDC_PORT_2_ECHO
 // Note: USB CDC ports should be enabled in order to minimize memory usage
+// TODO: Add to each config file
+/* Define to enable USB mass storage */
+#define ENABLE_USB_STORAGE
 
 //
 //

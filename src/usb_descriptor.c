@@ -9,6 +9,7 @@
 
 #include "usb-callback.h"
 
+#include "usb-storage-standard.h"
 #include "usb-cdc-standard.h"
 #include "usb-address.h"
 #include "usb-cdc.h"
@@ -64,6 +65,13 @@ struct usb_device_configuration_descriptor {
     struct usb_interface_descriptor cdc_data_interface_2;
     struct usb_endpoint_descriptor cdc_data_in_endpoint_2;
     struct usb_endpoint_descriptor cdc_data_out_endpoint_2;
+#endif
+#ifdef ENABLE_USB_STORAGE
+    /* USB Mass Storage Interface */
+    struct usb_interface_association_descriptor association_storage;
+    struct usb_interface_descriptor storage_interface;
+    struct usb_endpoint_descriptor storage_in_endpoint;
+    struct usb_endpoint_descriptor storage_out_endpoint;
 #endif
 } __attribute__((packed));
 
@@ -369,6 +377,51 @@ const struct usb_device_configuration_descriptor usb_config_descriptor = {
         .bmAttributes.sync_type = USB_SYNC_TYPE_NONE,
         .bmAttributes.usage_type = USB_USAGE_TYPE_DATA,
         .wMaxPacketSize = USB_CDC_DATA_EP_SIZE,
+        .bInterval = 0
+    }
+#endif
+#ifdef ENABLE_USB_STORAGE
+    .association_storage = {
+        .bLength = sizeof(struct usb_interface_association_descriptor),
+        .bDescriptorType = USB_DESC_TYPE_INTERFACE_ASSOCIATION,
+        .bFirstInterface = USB_INTERFACE_STORAGE,
+        .bInterfaceCount = 1,
+        .bFunctionClass = USB_STORAGE_CLASS_CODE,
+        .bFunctionSubClass = USB_STORAGE_SUBCLASS_TRANSPARENT,
+        .bFunctionProtocol = USB_STORAGE_PROTOCOL_CODE,
+        .iFunction = 0
+    },
+    .storage_interface = {
+        .bLength = sizeof(struct usb_interface_descriptor),
+        .bDescriptorType = USB_DESC_TYPE_INTERFACE,
+        .bInterfaceNumber = USB_INTERFACE_STORAGE,
+        .bAlternateSetting = 0,
+        .bNumEndpoints = 2,
+        .bInterfaceClass = USB_STORAGE_CLASS_CODE,
+        .bInterfaceSubClass = USB_STORAGE_SUBCLASS_TRANSPARENT,
+        .bInterfaceProtocol = USB_STORAGE_PROTOCOL_CODE,
+        .iInterface = 0
+    },
+    .storage_in_endpoint = {
+        .bLength = sizeof(struct usb_endpoint_descriptor),
+        .bDescriptorType = USB_DESC_TYPE_ENDPOINT,
+        .bEndpointAddress.direction = USB_DATA_TRANS_DEVICE_TO_HOST,
+        .bEndpointAddress.endpoint_number = USB_ENDPOINT_IN_STORAGE,
+        .bmAttributes.transfer_type = USB_TRANS_TYPE_BULK,
+        .bmAttributes.sync_type = USB_SYNC_TYPE_NONE,
+        .bmAttributes.usage_type = USB_USAGE_TYPE_DATA,
+        .wMaxPacketSize = USB_CDC_DATA_EP_SIZE, // TODO: Move this constant
+        .bInterval = 0
+    },
+    .storage_out_endpoint = {
+        .bLength = sizeof(struct usb_endpoint_descriptor),
+        .bDescriptorType = USB_DESC_TYPE_ENDPOINT,
+        .bEndpointAddress.direction = USB_DATA_TRANS_HOST_TO_DEVICE,
+        .bEndpointAddress.endpoint_number = USB_ENDPOINT_OUT_STORAGE,
+        .bmAttributes.transfer_type = USB_TRANS_TYPE_BULK,
+        .bmAttributes.sync_type = USB_SYNC_TYPE_NONE,
+        .bmAttributes.usage_type = USB_USAGE_TYPE_DATA,
+        .wMaxPacketSize = USB_CDC_DATA_EP_SIZE, // TODO: Move this constant
         .bInterval = 0
     }
 #endif
