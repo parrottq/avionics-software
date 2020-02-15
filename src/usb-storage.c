@@ -20,6 +20,9 @@
 /* Endpoint buffers */
 static uint8_t out_buffer[USB_STORAGE_ENDPOINT_SIZE];
 
+/* Buffer with GET MAX LUN Reponse */
+static const uint8_t lun_response = 0;
+
 uint8_t usb_storage_class_request_callback(struct usb_setup_packet *packet,
                                            uint16_t *response_length,
                                            const uint8_t **response_buffer)
@@ -28,8 +31,7 @@ uint8_t usb_storage_class_request_callback(struct usb_setup_packet *packet,
     {
     case USB_STORAGE_REQ_MAX_LUN:
         *response_length = 1;
-        uint8_t response_one = **response_buffer;
-        response_one = 0;
+        *response_buffer = (const uint8_t*)&lun_response;
         break;
     case USB_STORAGE_REQ_RESET:
         // Not supported
@@ -71,6 +73,7 @@ void usb_storage_enable_config_callback(void)
                            USB_ENDPOINT_TYPE_BULK,
                            &data_in_complete);
 
+    /* Start the first endpoint transaction */
     usb_start_out(USB_ENDPOINT_OUT_STORAGE,
                   out_buffer,
                   USB_STORAGE_ENDPOINT_SIZE);
