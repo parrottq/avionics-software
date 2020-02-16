@@ -36,49 +36,32 @@ enum
     USB_INTERFACE_COUNT
 };
 
-/* USB endpoints in */
+/* USB endpoints */
 enum
 {
     USB_ENDPOINT_IN_ZERO,
 #ifdef ENABLE_USB_CDC_PORT_0
     USB_CDC_NOTIFICATION_ENDPOINT_0,
     USB_CDC_DATA_IN_ENDPOINT_0,
+    USB_CDC_DATA_OUT_ENDPOINT_0,
 #endif
 #ifdef ENABLE_USB_CDC_PORT_1
     USB_CDC_NOTIFICATION_ENDPOINT_1,
     USB_CDC_DATA_IN_ENDPOINT_1,
+    USB_CDC_DATA_OUT_ENDPOINT_1,
 #endif
 #ifdef ENABLE_USB_CDC_PORT_2
     USB_CDC_NOTIFICATION_ENDPOINT_2,
     USB_CDC_DATA_IN_ENDPOINT_2,
-#endif
-#ifdef ENABLE_USB_STORAGE
-    USB_ENDPOINT_IN_STORAGE,
-#endif
-
-    /* Number of in endpoints */
-    USB_ENDPOINT_IN_COUNT
-};
-
-/* USB endpoints out */
-enum
-{
-    USB_ENDPOINT_OUT_ZERO,
-#ifdef ENABLE_USB_CDC_PORT_0
-    USB_CDC_DATA_OUT_ENDPOINT_0,
-#endif
-#ifdef ENABLE_USB_CDC_PORT_1
-    USB_CDC_DATA_OUT_ENDPOINT_1,
-#endif
-#ifdef ENABLE_USB_CDC_PORT_2
     USB_CDC_DATA_OUT_ENDPOINT_2,
 #endif
 #ifdef ENABLE_USB_STORAGE
+    USB_ENDPOINT_IN_STORAGE,
     USB_ENDPOINT_OUT_STORAGE,
 #endif
 
-    /* Number of in endpoints */
-    USB_ENDPOINT_OUT_COUNT
+    /* Number of endpoints */
+    USB_ENDPOINT_COUNT
 };
 
 #endif /* usb-address_h */
