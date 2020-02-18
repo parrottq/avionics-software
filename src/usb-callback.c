@@ -16,11 +16,13 @@
 void usb_enable_config_callback(void)
 {
     usb_cdc_enable_config_callback();
+    usb_storage_enable_config_callback();
 }
 
 void usb_disable_config_callback(void)
 {
     usb_cdc_disable_config_callback();
+    usb_storage_disable_config_callback();
 }
 
 uint8_t usb_class_request_callback(struct usb_setup_packet *packet,
