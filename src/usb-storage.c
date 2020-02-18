@@ -25,9 +25,6 @@ static uint8_t out_buffer[USB_STORAGE_MAX_OUT_BUFFER];
 /* Endpoint buffer to host (sending) */
 static uint8_t in_buffer[USB_STORAGE_BLOCK_SIZE];
 
-/* Buffer with GET MAX LUN Reponse */
-//static const uint8_t lun_response = 0;
-
 /* USB Mass Storage packet header */
 static struct usb_storage_command_block_wrapper *received_command_wrapper;
 
