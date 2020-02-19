@@ -61,6 +61,8 @@ enum scsi_opcodes
     SCSI_OPCODE_REPORT_LUNS = 0xa0,
     SCSI_OPCODE_SEND_DIAGNOSTIC = 0x1d,
     SCSI_OPCODE_TEST_UNIT_READY = 0x00,
+    SCSI_MODE_SENSE_6 = 0x1a,
+    SCSI_MEDIUM_REMOVAL = 0x1e,
 };
 
 /**
@@ -236,6 +238,20 @@ struct scsi_inquiry_reply
     char productID[16];
     char productRevisionLevel[4];
 } __attribute__((packed));
+
+/**
+ * SCSI mode sense reply
+ *
+ * Section 5.3.{2, 9, 18} of Seagate SCSI Commands Referenc Manual
+ */
+struct scsi_mode_sense_reply
+{
+    /* Header */
+    uint8_t modeDataLength : 8;
+    uint8_t mediumType : 8;
+    uint8_t reserved : 8;
+    uint8_t blockDescriptorLength : 8;
+};
 
 // Stop ignoring warnings about inefficient alignment
 #pragma GCC diagnostic pop

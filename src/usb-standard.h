@@ -157,10 +157,7 @@ enum usb_endpoint_size {
     USB_ENDPOINT_SIZE_8 = 8,
     USB_ENDPOINT_SIZE_16 = 16,
     USB_ENDPOINT_SIZE_32 = 32,
-    USB_ENDPOINT_SIZE_64 = 64,
-    USB_ENDPOINT_SIZE_128 = 128,
-    USB_ENDPOINT_SIZE_256 = 256,
-    USB_ENDPOINT_SIZE_512 = 512,
+    USB_ENDPOINT_SIZE_64 = 64
 };
 
 /**
@@ -209,7 +206,7 @@ struct usb_device_descriptor {
     /** Protocol code (assigned by the USB-IF) */
     uint8_t bDeviceProtocol;
     /** Maximum packet size for endpoint zero */
-    uint8_t bMaxPacketSize0: 8;
+    enum usb_endpoint_size bMaxPacketSize0: 8;
     /** Vendor ID (assigned by the USB-IF) */
     uint16_t idVendor;
     /** Product ID (assigned by the manufacturer) */
