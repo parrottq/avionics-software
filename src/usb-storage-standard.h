@@ -193,6 +193,8 @@ struct usb_storage_command_descriptor_block_16
 /**
  * SCSI Read Capacity reply
  *
+ * Note: These values are big endian for some reason
+ *
  * Section 3.22.2 of Seagate SCSI Commands Referenc Manual
  */
 struct scsi_read_capacity_10_reply

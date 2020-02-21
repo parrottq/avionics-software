@@ -367,8 +367,9 @@ static uint8_t scsi_read_capacity_callback(uint16_t *packet_length)
 {
     struct scsi_read_capacity_10_reply *read_capacity_reply = (struct scsi_read_capacity_10_reply *)in_buffer;
     // TODO: Actually make this more than 1
-    read_capacity_reply->logicalBlockAddress = 1;
-    read_capacity_reply->blockLength = USB_STORAGE_BLOCK_SIZE;
+    /* These need to be big endian hence __REV */
+    read_capacity_reply->logicalBlockAddress = __REV(100);
+    read_capacity_reply->blockLength = __REV(USB_STORAGE_BLOCK_SIZE);
 
     *packet_length = sizeof(struct scsi_read_capacity_10_reply);
     scsi_command_callback = usb_status_success_callback;
