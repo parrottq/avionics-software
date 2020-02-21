@@ -32,18 +32,19 @@ static struct usb_storage_command_block_wrapper *received_command_wrapper;
 static struct usb_storage_command_descriptor_block_16 *received_scsi_command;
 
 /* SCSI command callback */
-static uint8_t (*scsi_command_callback)(uint16_t *);
+static uint8_t (*scsi_command_callback)(uint16_t *, bool *);
 
 /* Amount of residue */
 static uint16_t residual_bytes;
 
 /* SCSI command callbacks */
-static uint8_t scsi_read_capacity_callback(uint16_t *packet_length);
-static uint8_t scsi_inquiry_callback(uint16_t *packet_length);
-static uint8_t usb_status_callback(uint16_t *packet_length, uint8_t status);
-static uint8_t usb_status_success_callback(uint16_t *packet_length);
-static uint8_t usb_status_failed_callback(uint16_t *packet_length);
-static uint8_t scsi_mode_sense_callback(uint16_t *packet_length);
+static uint8_t scsi_read_capacity_callback(uint16_t *packet_length, bool *continuation);
+static uint8_t scsi_inquiry_callback(uint16_t *packet_length, bool *continuation);
+static uint8_t usb_status_callback(uint16_t *packet_length, bool *continuation, uint8_t status);
+static uint8_t usb_status_success_callback(uint16_t *packet_length, bool *continuation);
+static uint8_t usb_status_failed_callback(uint16_t *packet_length, bool *continuation);
+static uint8_t scsi_mode_sense_callback(uint16_t *packet_length, bool *continuation);
+static uint8_t scsi_read_10_callback(uint16_t *packet_length, bool *continuation);
 
 /* Other headers */
 static void data_out_complete(uint16_t length);
@@ -96,7 +97,7 @@ static void data_out_complete(uint16_t length)
 
 static void data_in_complete(void)
 {
-    /* Status command has been sent, wait for next */
+    /* Status command has been sent, wait for next transaction */
     if (scsi_command_callback == 0)
     {
         usb_start_out(USB_ENDPOINT_OUT_STORAGE,
@@ -105,12 +106,15 @@ static void data_in_complete(void)
         return;
     }
 
-    static uint16_t usb_packet_length = 0;
-    if (scsi_command_callback(&usb_packet_length) != 0)
+    /* Length of the current partial packet */
+    uint16_t usb_packet_length = 0;
+    /* Indicates if the data being sent is a continuation of the last packet */
+    bool continuation = false;
+    if (scsi_command_callback(&usb_packet_length, &continuation) != 0)
     {
         /* Error, status failed callback will finish the transaction */
         scsi_command_callback = usb_status_failed_callback;
-        // usb status callbacks never fail so no infinite recursion is possible
+        // usb status callbacks never fail so no infinite recursion is not possible
         data_in_complete();
     }
     else
@@ -125,7 +129,7 @@ static void data_in_complete(void)
             received_command_wrapper->dataTransferLength -= usb_packet_length;
         }
 
-        usb_start_in(USB_ENDPOINT_IN_STORAGE, in_buffer, usb_packet_length, 1);
+        usb_start_in(USB_ENDPOINT_IN_STORAGE, in_buffer, usb_packet_length, !continuation);
     }
 }
 
@@ -166,6 +170,7 @@ static uint8_t scsi_load_into_received(struct usb_storage_command_descriptor_blo
      * structure. Values are assigned in reverse chronological order to not
      * overide unprocessed data.
      */
+    // TODO: I think some of these don't properly recast to different sized ints
     switch (cdb_size)
     {
     case 6:; // semi-colon intentional, quirk in C
@@ -229,8 +234,7 @@ uint8_t usb_storage_scsi_host_handler(uint8_t *cdb_buffer, uint8_t cdb_size)
         scsi_command_callback = scsi_read_capacity_callback;
         break;
     case SCSI_OPCODE_READ_10:
-        // Not implemented
-        return 1;
+        scsi_command_callback = scsi_read_10_callback;
         break;
     case SCSI_OPCODE_READ_16:
         // Not implemented
@@ -263,17 +267,17 @@ uint8_t usb_storage_scsi_host_handler(uint8_t *cdb_buffer, uint8_t cdb_size)
     return 0;
 }
 
-static uint8_t usb_status_failed_callback(uint16_t *packet_length)
+static uint8_t usb_status_failed_callback(uint16_t *packet_length, bool *continuation)
 {
-    return usb_status_callback(packet_length, 1);
+    return usb_status_callback(packet_length, continuation, 1);
 }
 
-static uint8_t usb_status_success_callback(uint16_t *packet_length)
+static uint8_t usb_status_success_callback(uint16_t *packet_length, bool *continuation)
 {
-    return usb_status_callback(packet_length, 0);
+    return usb_status_callback(packet_length, continuation, 0);
 }
 
-static uint8_t usb_status_callback(uint16_t *packet_length, uint8_t status)
+static uint8_t usb_status_callback(uint16_t *packet_length, bool *continuation, uint8_t status)
 {
     /* Clamp padding to not exceed buffer length */
     uint16_t padding_length = CLAMP_MAX(received_command_wrapper->dataTransferLength, USB_STORAGE_BLOCK_SIZE);
@@ -290,12 +294,15 @@ static uint8_t usb_status_callback(uint16_t *packet_length, uint8_t status)
         /* Added to residual byte count */
         residual_bytes += padding_length;
 
-        /* Length of the padding returned */
+        /* Length of the padding to send */
         *packet_length = padding_length;
+
+        /* No data is left, terminate packet */
+        *continuation = received_command_wrapper->dataTransferLength > 0;
     }
     else
     {
-        /* No padding left to send, send status */
+        /* No padding left, send status */
         struct usb_storage_command_status_wrapper *status_wrapper = (struct usb_storage_command_status_wrapper *)in_buffer;
         status_wrapper->signature = USB_STORAGE_SIGNATURE;
         status_wrapper->tag = received_command_wrapper->tag;
@@ -304,7 +311,7 @@ static uint8_t usb_status_callback(uint16_t *packet_length, uint8_t status)
 
         *packet_length = sizeof(struct usb_storage_command_status_wrapper);
 
-        /* Done transaction */
+        /* Done SCSI transaction */
         scsi_command_callback = 0;
     }
 
@@ -312,7 +319,39 @@ static uint8_t usb_status_callback(uint16_t *packet_length, uint8_t status)
     return 0;
 }
 
-static uint8_t scsi_inquiry_callback(uint16_t *packet_length)
+static uint8_t scsi_read_10_callback(uint16_t *packet_length, bool *continuation)
+{
+    // TODO: Read meaningful data instead of numbers
+    /* Fill buffer with some numbers to distinguish it */
+    for (uint16_t i = 0; i < 512; i++)
+    {
+        in_buffer[i] = i;
+    }
+
+    /* Subtract from the number of blocks left */
+        received_scsi_command->length -= 1;
+
+    /* Point to the next block */
+        received_scsi_command->logicalBlockAddress += 1;
+
+    /* Transfer length */
+    *packet_length = USB_STORAGE_BLOCK_SIZE;
+
+    if (received_scsi_command->length == 0)
+    {
+        /* No blocks left, send success */
+        scsi_command_callback = usb_status_success_callback;
+    }
+    else
+    {
+        /* This is still one packet since not all data has been transferred */
+        *continuation = true;
+    }
+
+    return 0;
+}
+
+static uint8_t scsi_inquiry_callback(uint16_t *packet_length, bool *continuation)
 {
     struct scsi_inquiry_reply *inquiry_reply = (struct scsi_inquiry_reply *)in_buffer;
     // Direct Access Device
@@ -378,10 +417,10 @@ static uint8_t scsi_inquiry_callback(uint16_t *packet_length)
     return 0;
 }
 
-static uint8_t scsi_read_capacity_callback(uint16_t *packet_length)
+static uint8_t scsi_read_capacity_callback(uint16_t *packet_length, bool *continuation)
 {
     struct scsi_read_capacity_10_reply *read_capacity_reply = (struct scsi_read_capacity_10_reply *)in_buffer;
-    // TODO: Actually make this more than 1
+    // TODO: Make this meaningful
     /* These need to be big endian hence __REV */
     read_capacity_reply->logicalBlockAddress = __REV(100);
     read_capacity_reply->blockLength = __REV(USB_STORAGE_BLOCK_SIZE);
@@ -391,7 +430,7 @@ static uint8_t scsi_read_capacity_callback(uint16_t *packet_length)
     return 0;
 }
 
-static uint8_t scsi_mode_sense_callback(uint16_t *packet_length)
+static uint8_t scsi_mode_sense_callback(uint16_t *packet_length, bool *continuation)
 {
     struct scsi_mode_sense_reply *mode_sense_reply = (struct scsi_mode_sense_reply *)in_buffer;
 
