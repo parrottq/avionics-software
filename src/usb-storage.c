@@ -46,11 +46,21 @@ static uint8_t usb_status_callback(uint16_t *packet_length, uint8_t status);
 static uint8_t usb_status_success_callback(uint16_t *packet_length);
 static uint8_t usb_status_failed_callback(uint16_t *packet_length);
 static uint8_t scsi_mode_sense_callback(uint16_t *packet_length);
+static uint8_t scsi_read_10_callback(uint16_t *packet_length);
 
 /* Other headers */
 static void data_out_complete(uint16_t length);
 static void data_in_complete(void);
 static uint8_t scsi_load_into_received(struct usb_storage_command_descriptor_block_16 *scsi_command, uint8_t cdb_size);
+
+static void fill_buffer_sequential_numbers(uint8_t *buffer, uint16_t length, uint32_t offset)
+{
+    uint32_t *buffer_32 = (uint32_t *)buffer;
+    for (uint32_t i = 0; i < (length / (sizeof(uint16_t) / sizeof(uint8_t))); i++)
+    {
+        buffer_32[i] = i + (offset * USB_STORAGE_BLOCK_SIZE);
+    }
+}
 
 uint8_t usb_storage_class_request_callback(struct usb_setup_packet *packet,
                                            uint16_t *response_length,
@@ -231,8 +241,7 @@ uint8_t usb_storage_scsi_host_handler(uint8_t *cdb_buffer, uint8_t cdb_size)
         scsi_command_callback = scsi_read_capacity_callback;
         break;
     case SCSI_OPCODE_READ_10:
-        // Not implemented
-        return 1;
+        scsi_command_callback = scsi_read_10_callback;
         break;
     case SCSI_OPCODE_READ_16:
         // Not implemented
@@ -311,6 +320,23 @@ static uint8_t usb_status_callback(uint16_t *packet_length, uint8_t status)
     }
 
     // usb_status_callback cannot fail because it is the fallback for other commands failing
+    return 0;
+}
+
+static uint8_t scsi_read_10_callback(uint16_t *packet_length)
+{
+    // TODO: Check with allocation size in usbms packet
+    if (received_scsi_command->length > 0)
+    {
+        fill_buffer_sequential_numbers(in_buffer, received_scsi_command->length, received_scsi_command->logicalBlockAddress);
+        received_scsi_command->length -= 1;
+        received_scsi_command->logicalBlockAddress += 1;
+    }
+    else
+    {
+        scsi_command_callback = usb_status_success_callback;
+    }
+    *packet_length = USB_STORAGE_BLOCK_SIZE;
     return 0;
 }
 
