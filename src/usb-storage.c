@@ -256,6 +256,9 @@ uint8_t usb_storage_scsi_host_handler(uint8_t *cdb_buffer, uint8_t cdb_size)
     case SCSI_MEDIUM_REMOVAL:
         scsi_command_callback = usb_status_success_callback;
         break;
+    case SCSI_SYNC_CACHE_10:
+        scsi_command_callback = usb_status_success_callback;
+        break;
     default:
         return 1;
     }
@@ -357,6 +360,20 @@ static uint8_t scsi_inquiry_callback(uint16_t *packet_length)
     inquiry_reply->vendorID[4] = 'a';
     inquiry_reply->vendorID[5] = 'c';
     inquiry_reply->vendorID[6] = 'e';
+    inquiry_reply->vendorID[7] = ' ';
+
+    for (uint8_t i = 0; i < 16; i++)
+    {
+        inquiry_reply->productID[i] = ' ';
+    }
+    inquiry_reply->productID[0] = 'M';
+    inquiry_reply->productID[1] = 'C';
+    inquiry_reply->productID[2] = 'U';
+
+    inquiry_reply->productRevisionLevel[0] = '0';
+    inquiry_reply->productRevisionLevel[1] = '0';
+    inquiry_reply->productRevisionLevel[2] = '0';
+    inquiry_reply->productRevisionLevel[3] = '1';
 
     *packet_length = sizeof(struct scsi_inquiry_reply);
     scsi_command_callback = usb_status_success_callback;
@@ -385,19 +402,39 @@ static uint8_t scsi_mode_sense_callback(uint16_t *packet_length)
     mode_sense_reply->modeDataLength = sizeof(struct scsi_mode_sense_reply) - 1;
     /* Header */
     mode_sense_reply->mediumType = 0;
-    mode_sense_reply->reserved = 0;
+    mode_sense_reply->reserved1 = 0;
     mode_sense_reply->blockDescriptorLength = 0;
 
-    //uint16_t temp_packet_length = CLAMP_MAX(received_command_wrapper->dataTransferLength, USB_STORAGE_BLOCK_SIZE);
+    /* Cache Mode Page */
+    mode_sense_reply->cachePageCode = 0x8;
+    mode_sense_reply->cachePS = 0;
+    mode_sense_reply->cacheSPF = 0;
+    mode_sense_reply->cachePageLength = 18;
+    mode_sense_reply->options1 = 0b100;
+    mode_sense_reply->writeRetentionPriority = 0;
+    mode_sense_reply->readRetentionPriority = 0;
+    mode_sense_reply->disablePrefetchExceeds = 0;
+    mode_sense_reply->minimumPrefetch = 0;
+    mode_sense_reply->maximumPrefetch = 0;
+    mode_sense_reply->maximumPrefetchCeiling = 0;
+    mode_sense_reply->options2 = 0;
+    mode_sense_reply->numberCache = 0;
+    mode_sense_reply->cacheSegmentSize = 0;
+    mode_sense_reply->reserved2 = 0;
+    mode_sense_reply->obsolete1 = 0;
 
-    /* Pad the rest of the packet */
-    /*
-    for (uint16_t i = sizeof(struct scsi_mode_sense_reply); i < temp_packet_length; i++)
-    {
-        in_buffer[i] = 0;
-    }*/
+    /* Informational Exceptions Control Mode Page */
+    mode_sense_reply->exceptPageCode = 0x1c;
+    mode_sense_reply->exceptSPF = 0;
+    mode_sense_reply->exceptPS = 0;
+    mode_sense_reply->exceptPageLength = 10;
+    mode_sense_reply->options3 = 0;
+    mode_sense_reply->MRIE = 0;
+    mode_sense_reply->reserved3 = 0;
+    mode_sense_reply->intervalTime = 0;
+    mode_sense_reply->reportCount = 0;
 
-    *packet_length = sizeof(struct scsi_mode_sense_reply);
+    *packet_length = received_command_wrapper->dataTransferLength;
     scsi_command_callback = usb_status_success_callback;
     return 0;
 }
