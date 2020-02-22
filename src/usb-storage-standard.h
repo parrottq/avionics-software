@@ -22,4 +22,15 @@
 /* USB Mass Storage Class Bulk-Only Transport */
 #define USB_STORAGE_PROTOCOL_CODE 0x50
 
+/**
+ * USB Mass Storage class specific as defined in
+ * USB Mass Storage Class Bulk-Only Transport Rev 1.0 Section 3
+ *
+ * @see https://www.usb.org/sites/default/files/usbmassbulk_10.pdf
+ */
+enum usb_storage_class_specific {
+    USB_STORAGE_REQ_RESET = 0xff,
+    USB_STORAGE_REQ_MAX_LUN = 0xfe,
+};
+
 #endif /* usb_storage_standard_h */
