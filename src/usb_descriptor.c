@@ -1,21 +1,23 @@
 /**
- * @file usb-cdc.c
+ * @file usb_descriptor.c
  * @desc USB CDC interface configuration descriptor
  * @author Samuel Dewan
  * @date 2019-12-27
- * Last Author:
- * Last Edited On:
+ * Last Author: Quinn Parrott
+ * Last Edited On: 2020-02-13
  */
 
-#include "usb-cdc.h"
+#include "usb-callback.h"
 
 #include "usb-cdc-standard.h"
+#include "usb-address.h"
+#include "usb-cdc.h"
 
 // Ignore warnings in this file about inefficient alignment
 #pragma GCC diagnostic ignored "-Wattributes"
 #pragma GCC diagnostic ignored "-Wpacked"
 
-struct usb_cdc_configuration_descriptor {
+struct usb_device_configuration_descriptor {
     // Configuration
     struct usb_configuration_descriptor configuration;
 #ifdef ENABLE_USB_CDC_PORT_0
@@ -69,12 +71,12 @@ struct usb_cdc_configuration_descriptor {
 #pragma GCC diagnostic pop
 
 __attribute__((__aligned__(4)))
-const struct usb_cdc_configuration_descriptor usb_cdc_config_descriptor = {
+const struct usb_device_configuration_descriptor usb_config_descriptor = {
     // Configuration
     .configuration = {
         .bLength = sizeof(struct usb_configuration_descriptor),
         .bDescriptorType = USB_DESC_TYPE_CONFIGURATION,
-        .wTotalLength  = sizeof(struct usb_cdc_configuration_descriptor),
+        .wTotalLength  = sizeof(struct usb_device_configuration_descriptor),
         .bNumInterfaces = USB_INTERFACE_COUNT,
         .bConfigurationValue = 1,
         .iConfiguration = 0,

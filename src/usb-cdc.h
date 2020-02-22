@@ -3,8 +3,8 @@
  * @desc USB CDC interface
  * @author Samuel Dewan
  * @date 2019-11-17
- * Last Author: Samuel Dewan
- * Last Edited On: 2019-12-27
+ * Last Author: Quinn Parrott
+ * Last Edited On: 2020-02-13
  */
 
 #ifndef usb_cdc_h
@@ -18,49 +18,6 @@
 #define USB_CDC_NOTIFICATION_EP_SIZE    64
 #define USB_CDC_DATA_EP_SIZE            64
 
-/* USB interface constants */
-enum {
-#ifdef ENABLE_USB_CDC_PORT_0
-    USB_INTERFACE_CDC_CONTROL_0,
-    USB_INTERFACE_CDC_DATA_0,
-#endif
-#ifdef ENABLE_USB_CDC_PORT_1
-    USB_INTERFACE_CDC_CONTROL_1,
-    USB_INTERFACE_CDC_DATA_1,
-#endif
-#ifdef ENABLE_USB_CDC_PORT_2
-    USB_INTERFACE_CDC_CONTROL_2,
-    USB_INTERFACE_CDC_DATA_2,
-#endif
-
-    /* Number of interfaces */
-    USB_INTERFACE_COUNT
-};
-
-/* USB endpoints */
-enum
-{
-    USB_ENDPOINT_IN_ZERO,
-#ifdef ENABLE_USB_CDC_PORT_0
-    USB_CDC_NOTIFICATION_ENDPOINT_0,
-    USB_CDC_DATA_IN_ENDPOINT_0,
-    USB_CDC_DATA_OUT_ENDPOINT_0,
-#endif
-#ifdef ENABLE_USB_CDC_PORT_1
-    USB_CDC_NOTIFICATION_ENDPOINT_1,
-    USB_CDC_DATA_IN_ENDPOINT_1,
-    USB_CDC_DATA_OUT_ENDPOINT_1,
-#endif
-#ifdef ENABLE_USB_CDC_PORT_2
-    USB_CDC_NOTIFICATION_ENDPOINT_2,
-    USB_CDC_DATA_IN_ENDPOINT_2,
-    USB_CDC_DATA_OUT_ENDPOINT_2,
-#endif
-
-    /* Number of endpoints */
-    USB_ENDPOINT_COUNT
-};
-
 #ifdef ENABLE_USB_CDC_PORT_2
 #define USB_CDC_HIGHEST_PORT 2
 #else
@@ -71,9 +28,8 @@ enum
 #endif // ENABLE_USB_CDC_INTERFACE_1
 #endif // ENABLE_USB_CDC_INTERFACE_2
 
-
-/** Configuration descriptor for CDC interface. */
-extern const struct usb_cdc_configuration_descriptor usb_cdc_config_descriptor;
+#define USB_CDC_NOTIFICATION_EP_SIZE    64
+#define USB_CDC_DATA_EP_SIZE            64
 
 /**
  *  Callback for when CDC configuration is enabled by host.
