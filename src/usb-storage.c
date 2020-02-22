@@ -421,7 +421,6 @@ static uint8_t scsi_read_capacity_callback(uint16_t *packet_length)
 
 static uint8_t scsi_mode_sense_callback(uint16_t *packet_length)
 {
-    // TODO: Mode Sense does not work properly probably due to the lack of sense data
     struct scsi_mode_sense_reply *mode_sense_reply = (struct scsi_mode_sense_reply *)in_buffer;
 
     /* Size excluding itself */
