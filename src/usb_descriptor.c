@@ -13,6 +13,7 @@
 #include "usb-cdc-standard.h"
 #include "usb-address.h"
 #include "usb-cdc.h"
+#include "usb-storage.h"
 
 // Ignore warnings in this file about inefficient alignment
 #pragma GCC diagnostic ignored "-Wattributes"
@@ -410,7 +411,7 @@ const struct usb_device_configuration_descriptor usb_config_descriptor = {
         .bmAttributes.transfer_type = USB_TRANS_TYPE_BULK,
         .bmAttributes.sync_type = USB_SYNC_TYPE_NONE,
         .bmAttributes.usage_type = USB_USAGE_TYPE_DATA,
-        .wMaxPacketSize = USB_CDC_DATA_EP_SIZE, // TODO: Move this constant
+        .wMaxPacketSize = USB_STORAGE_MAX_IN_BUFFER,
         .bInterval = 0
     },
     .storage_out_endpoint = {
@@ -421,7 +422,7 @@ const struct usb_device_configuration_descriptor usb_config_descriptor = {
         .bmAttributes.transfer_type = USB_TRANS_TYPE_BULK,
         .bmAttributes.sync_type = USB_SYNC_TYPE_NONE,
         .bmAttributes.usage_type = USB_USAGE_TYPE_DATA,
-        .wMaxPacketSize = USB_CDC_DATA_EP_SIZE, // TODO: Move this constant
+        .wMaxPacketSize = USB_STORAGE_MAX_OUT_BUFFER, // TODO: Move this constant
         .bInterval = 0
     }
 #endif
