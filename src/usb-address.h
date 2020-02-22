@@ -28,6 +28,9 @@ enum
     USB_INTERFACE_CDC_CONTROL_2,
     USB_INTERFACE_CDC_DATA_2,
 #endif
+#ifdef ENABLE_USB_STORAGE
+    USB_INTERFACE_STORAGE,
+#endif
 
     /* Number of interfaces */
     USB_INTERFACE_COUNT
@@ -51,6 +54,10 @@ enum
     USB_CDC_NOTIFICATION_ENDPOINT_2,
     USB_CDC_DATA_IN_ENDPOINT_2,
     USB_CDC_DATA_OUT_ENDPOINT_2,
+#endif
+#ifdef ENABLE_USB_STORAGE
+    USB_ENDPOINT_IN_STORAGE,
+    USB_ENDPOINT_OUT_STORAGE,
 #endif
 
     /* Number of endpoints */
