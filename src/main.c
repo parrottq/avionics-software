@@ -20,7 +20,7 @@
 
 #ifdef ID_USB
 #include "usb.h"
-#include "usb-cdc.h"
+#include "usb-callback.h"
 #else
 #undef ENABLE_USB
 #endif
@@ -404,10 +404,10 @@ int main(void)
     // Init USB
 #ifdef ENABLE_USB
     init_usb(GCLK_CLKCTRL_GEN_GCLK0, USB_SPEED_FULL,
-             &usb_cdc_enable_config_callback, &usb_cdc_disable_config_callback,
-             &usb_cdc_class_request_callback,
+             &usb_enable_config_callback, &usb_disable_config_callback,
+             &usb_class_request_callback,
              ((const struct usb_configuration_descriptor*)
-                                                &usb_cdc_config_descriptor));
+                                                &usb_config_descriptor));
     usb_attach();
 #endif
     
