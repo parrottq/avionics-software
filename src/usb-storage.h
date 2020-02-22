@@ -16,7 +16,6 @@
 
 #define USB_STORAGE_MAX_OUT_BUFFER USB_ENDPOINT_SIZE_32
 #define USB_STORAGE_MAX_IN_BUFFER USB_ENDPOINT_SIZE_64
-
 /**
  *  Callback to handle class specific requests.
  *
@@ -39,5 +38,16 @@ extern void usb_storage_enable_config_callback(void);
  *  Callback for when mass storage configuration is disabled by host.
  */
 extern void usb_storage_disable_config_callback(void);
+
+/**
+ * Handle SCSI commands from host
+ *
+ * @param cdb_buffer SCSI Command Descriptor Block buffer
+ * @param cdb_size Size of the SCSI command
+ * @param reply_length The length of the contents reply
+ *
+ * @return 0 if successful, non-zero otherwise
+ */
+extern uint8_t usb_storage_scsi_host_handler(uint8_t *cdb_buffer, uint8_t cdb_size, uint32_t *reply_length);
 
 #endif /* usb_storage_h */
