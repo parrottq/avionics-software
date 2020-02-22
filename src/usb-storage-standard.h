@@ -141,6 +141,8 @@ struct usb_storage_command_descriptor_block_10
     uint8_t options;
     /* Requested block */
     uint32_t logicalBlockAddress;
+    /* Even more options */
+    uint8_t options2;
     /* Generic length, changes meaning with different commands */
     uint16_t length;
     /* Controls a variety of options */

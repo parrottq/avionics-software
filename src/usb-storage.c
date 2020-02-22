@@ -92,7 +92,7 @@ static void data_out_complete(uint16_t length)
     /* If signature does not match or scsi parsing fails -> status failed */
     if (received_command_wrapper->signature != USB_STORAGE_SIGNATURE ||
         usb_storage_scsi_host_handler(
-            (uint8_t *)out_buffer + sizeof(struct usb_storage_command_block_wrapper), // TODO: Does this work
+            (uint8_t *)out_buffer + sizeof(struct usb_storage_command_block_wrapper),
             received_command_wrapper->SCSILength) != 0)
     {
         /* SCSI handling failed */
@@ -185,16 +185,16 @@ static uint8_t scsi_load_into_received(struct usb_storage_command_descriptor_blo
         received_scsi_command->control = cdb6->control;
         received_scsi_command->options2 = 0;
         received_scsi_command->length = cdb6->length;
-        received_scsi_command->logicalBlockAddress = cdb6->logicalBlockAddress;
+        received_scsi_command->logicalBlockAddress = (uint64_t)cdb6->logicalBlockAddress;
         received_scsi_command->options = cdb6->options;
         received_scsi_command->opcode = cdb6->opcode;
         break;
     case 10:;
         struct usb_storage_command_descriptor_block_10 *cdb10 = (struct usb_storage_command_descriptor_block_10 *)scsi_command;
         received_scsi_command->control = cdb10->control;
-        received_scsi_command->options2 = 0;
-        received_scsi_command->length = cdb10->length;
-        received_scsi_command->logicalBlockAddress = cdb10->logicalBlockAddress;
+        received_scsi_command->options2 = cdb10->options2;
+        received_scsi_command->length = cdb10->length >> 8;
+        received_scsi_command->logicalBlockAddress = (uint64_t)cdb10->logicalBlockAddress;
         received_scsi_command->options = cdb10->options;
         received_scsi_command->opcode = cdb10->opcode;
         break;
@@ -203,7 +203,7 @@ static uint8_t scsi_load_into_received(struct usb_storage_command_descriptor_blo
         received_scsi_command->control = cdb12->control;
         received_scsi_command->options2 = cdb12->options2;
         received_scsi_command->length = cdb12->length;
-        received_scsi_command->logicalBlockAddress = cdb12->logicalBlockAddress;
+        received_scsi_command->logicalBlockAddress = (uint64_t)cdb12->logicalBlockAddress;
         received_scsi_command->options = cdb12->options;
         received_scsi_command->opcode = cdb12->opcode;
         break;
