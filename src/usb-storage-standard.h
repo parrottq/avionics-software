@@ -61,6 +61,9 @@ enum scsi_opcodes
     SCSI_OPCODE_REPORT_LUNS = 0xa0,
     SCSI_OPCODE_SEND_DIAGNOSTIC = 0x1d,
     SCSI_OPCODE_TEST_UNIT_READY = 0x00,
+    SCSI_MODE_SENSE_6 = 0x1a,
+    SCSI_MEDIUM_REMOVAL = 0x1e,
+    SCSI_SYNC_CACHE_10 = 0x35,
 };
 
 /**
@@ -193,6 +196,8 @@ struct usb_storage_command_descriptor_block_16
 /**
  * SCSI Read Capacity reply
  *
+ * Note: These values are big endian for some reason
+ *
  * Section 3.22.2 of Seagate SCSI Commands Referenc Manual
  */
 struct scsi_read_capacity_10_reply
@@ -237,6 +242,49 @@ struct scsi_inquiry_reply
     char vendorID[8];
     char productID[16];
     char productRevisionLevel[4];
+} __attribute__((packed));
+
+/**
+ * SCSI mode sense reply
+ *
+ * Section 5.3.{2, 9, 18} of Seagate SCSI Commands Referenc Manual
+ */
+struct scsi_mode_sense_reply
+{
+    /* Header */
+    uint8_t modeDataLength : 8;
+    uint8_t mediumType : 8;
+    uint8_t reserved1 : 8;
+    uint8_t blockDescriptorLength : 8;
+
+    /* Cache Mode Page */
+    uint8_t cachePageCode : 6;
+    uint8_t cacheSPF : 1;
+    uint8_t cachePS : 1;
+    uint8_t cachePageLength;
+    uint8_t options1;
+    uint8_t writeRetentionPriority : 4;
+    uint8_t readRetentionPriority : 4;
+    uint16_t disablePrefetchExceeds;
+    uint16_t minimumPrefetch;
+    uint16_t maximumPrefetch;
+    uint16_t maximumPrefetchCeiling;
+    uint8_t options2;
+    uint8_t numberCache;
+    uint16_t cacheSegmentSize;
+    uint8_t reserved2;
+    uint32_t obsolete1 : 24;
+
+    /* Informational Exceptions Control Mode Page */
+    uint8_t exceptPageCode : 6;
+    uint8_t exceptSPF : 1;
+    uint8_t exceptPS : 1;
+    uint8_t exceptPageLength;
+    uint8_t options3;
+    uint8_t MRIE : 4;
+    uint8_t reserved3 : 4;
+    uint32_t intervalTime;
+    uint32_t reportCount;
 } __attribute__((packed));
 
 // Stop ignoring warnings about inefficient alignment

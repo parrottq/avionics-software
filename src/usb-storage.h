@@ -48,6 +48,6 @@ extern void usb_storage_disable_config_callback(void);
  *
  * @return 0 if successful, non-zero otherwise
  */
-extern uint8_t usb_storage_scsi_host_handler(uint8_t *cdb_buffer, uint8_t cdb_size, uint32_t *reply_length);
+extern uint8_t usb_storage_scsi_host_handler(uint8_t *cdb_buffer, uint8_t cdb_size);
 
 #endif /* usb_storage_h */
