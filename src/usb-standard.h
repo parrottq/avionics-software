@@ -206,7 +206,7 @@ struct usb_device_descriptor {
     /** Protocol code (assigned by the USB-IF) */
     uint8_t bDeviceProtocol;
     /** Maximum packet size for endpoint zero */
-    enum usb_endpoint_size bMaxPacketSize0: 8;
+    uint8_t bMaxPacketSize0: 8;
     /** Vendor ID (assigned by the USB-IF) */
     uint16_t idVendor;
     /** Product ID (assigned by the manufacturer) */
