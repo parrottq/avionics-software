@@ -340,5 +340,9 @@ clean:
 	@echo $(MSG_CLEANING)
 	$(REMOVE) -rf $(OBJDIR)/*
 
+test-fat:
+	gcc src/test-fat.c -o obj/create_fat
+	obj/create_fat
+
 # Listing of phony targets.
 .PHONY : all gccversion build elf clean clean_list program debug upload reset
