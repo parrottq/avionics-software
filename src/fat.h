@@ -10,7 +10,8 @@
 #ifndef fat_h
 #define fat_h
 
-#include "global.h"
+//#include "global.h"
+#include <stdint.h>
 
 #include "fat-standard.h"
 
@@ -68,14 +69,14 @@ enum fat_builder_pass_type
 
 struct fat_builder_state
 {
-    uint16_t state;
+    uint16_t directory;
     enum fat_builder_pass_type pass_type;
 };
 
 struct fat_file
 {
     uint16_t id;
-    uint32_t block;
+    uint64_t block;
 };
 
 /**
@@ -92,7 +93,7 @@ struct fat_file
  * 
  * @return != 0 if failure
  */
-extern uint8_t fat_translate_sector(uint32_t block, struct fat_file *file, void (*structure_callback)(struct fat_builder_state), uint8_t *buffer);
+extern uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*structure_callback)(struct fat_builder_state *), uint8_t *buffer);
 
 // TODO: Desc
 extern uint8_t fat_get_size(void (*structure_callback)(struct fat_builder_state), uint32_t *size);

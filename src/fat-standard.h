@@ -10,7 +10,7 @@
 #ifndef fat_standard_h
 #define fat_standard_h
 
-#include "bits/stdint-uintn.h"
+#include <stdint.h>
 
 // Ignore warnings in this file about inefficient alignment
 #pragma GCC diagnostic ignored "-Wattributes"
