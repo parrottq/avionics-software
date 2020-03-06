@@ -61,7 +61,13 @@ void main(){
 }
 */
 
-enum fat_builder_pass_type
+enum fat_build/**
+ * Add a directory to the fat_builder_state
+ * 
+ * @param state builder_state given to the callback
+ * @param id Directory identification
+ * @param name_str Name of the directory max 11 chars
+ */er_pass_type
 {
     FAT_BUILDER_PASS_TYPE_CHUCK_ALLOCATION,
     FAT_BUILDER_PASS_TYPE_WRITE_DIR_CHUCK,
@@ -95,7 +101,33 @@ struct fat_file
  */
 extern uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*structure_callback)(struct fat_builder_state *), uint8_t *buffer);
 
-// TODO: Desc
-extern uint8_t fat_get_size(void (*structure_callback)(struct fat_builder_state), uint32_t *size);
+/**
+ * Given the structure_callback calculate the capacity of the fat partition
+ * 
+ * @param structure_callback Used to describe the directory structure of the file system
+ * @param size The calculated size in bytes
+ * 
+ * @return != 0 if failure
+ */
+extern uint8_t fat_get_size(void (*structure_callback)(struct fat_builder_state *), uint32_t *size);
+
+/**
+ * Add a file to the fat_builder_state
+ * 
+ * @param state builder_state given to the callback
+ * @param id File identification number
+ * @param name_str Name of the file max 11 chars
+ * @param size Size of the file in bytes, this CAN be larger the 32 bit max inherent in fat32
+ */
+extern void fat_add_file(struct fat_builder_state *state, uint16_t id, char *name_str, uint64_t size);
+
+/**
+ * Add a directory to the fat_builder_state
+ * 
+ * @param state builder_state given to the callback
+ * @param id Directory identification
+ * @param name_str Name of the directory max 11 chars
+ */
+extern void fat_add_directory(struct fat_builder_state *state, uint16_t id, char *name_str);
 
 #endif /* fat_h */
