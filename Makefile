@@ -341,7 +341,7 @@ clean:
 	$(REMOVE) -rf $(OBJDIR)/*
 
 test-fat:
-	gcc src/test-fat.c src/fat.c -o obj/create_fat
+	gcc -g src/test-fat.c src/fat.c -o obj/create_fat
 	obj/create_fat
 
 # Listing of phony targets.

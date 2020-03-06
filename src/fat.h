@@ -60,14 +60,7 @@ void main(){
     queue_transfer(buffer);
 }
 */
-
-enum fat_build/**
- * Add a directory to the fat_builder_state
- * 
- * @param state builder_state given to the callback
- * @param id Directory identification
- * @param name_str Name of the directory max 11 chars
- */er_pass_type
+enum fat_builder_pass_type
 {
     FAT_BUILDER_PASS_TYPE_CHUCK_ALLOCATION,
     FAT_BUILDER_PASS_TYPE_WRITE_DIR_CHUCK,
