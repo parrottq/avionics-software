@@ -166,6 +166,7 @@ uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*struc
     }
     else if (block == 2)
     {
+        // TODO: This is hard coded and should be generated based on the fs structure callback
         fat_builder_write_dir(structure_callback, buffer, 0, 0);
     }
     return 0;
