@@ -62,14 +62,44 @@ void main(){
 */
 enum fat_builder_pass_type
 {
-    FAT_BUILDER_PASS_TYPE_CHUCK_ALLOCATION,
+    /* Used to calculate number of sectors */
+    FAT_BUILDER_PASS_TYPE_TOTAL_CHUCKS,
+    /* Used to write directory entries */
     FAT_BUILDER_PASS_TYPE_WRITE_DIR_CHUCK,
+};
+
+struct fat_builder_pass_total_chunks
+{
+    /* Number of file chunks */
+    uint32_t chunk_count;
+    /* Number of directory/file entries */
+    uint32_t file_dir_count;
+    /* The directory that has the highest directory index */
+    uint32_t max_dir_index;
+};
+
+struct fat_builder_pass_write_dir_chuck
+{
+    /* Ignore the first n entries */
+    uint32_t ignore_entries;
+    /* Point to the head of the buffer */
+    uint32_t entry_offset;
+};
+
+union fat_builder_pass_type_data {
+    struct fat_builder_pass_total_chunks total_chunks;
+    struct fat_builder_pass_write_dir_chuck write_dir;
 };
 
 struct fat_builder_state
 {
-    uint16_t directory;
+    /* The current directory being searched */
+    uint32_t directory;
+    uint8_t *buffer;
+
+    /* Internal */
     enum fat_builder_pass_type pass_type;
+    union fat_builder_pass_type_data data;
 };
 
 struct fat_file

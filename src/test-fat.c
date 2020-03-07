@@ -21,11 +21,11 @@ void callback(struct fat_builder_state *state)
     switch (state->directory)
     {
     case ROOT:
-        fat_add_file(state, FILE1, "base", 1000);
+        fat_add_file(state, FILE1, "base", 1);
         fat_add_directory(state, DIR1, "dir1");
         break;
     case DIR1:
-        fat_add_file(state, FILE2, "stuff", 2000);
+        fat_add_file(state, FILE2, "stuff", 1);
         break;
     };
 }
@@ -38,7 +38,10 @@ int call_all_blocks(FILE *fp)
 
     for (uint32_t i = 0; i < size; i++)
     {
-        printf("Sector %i\n", i);
+        if (i < 100)
+        {
+            printf("Sector %i\n", i);
+        }
         struct fat_file requested_block;
         fat_translate_sector(i, &requested_block, callback, buffer);
 
@@ -57,7 +60,7 @@ int call_all_blocks(FILE *fp)
 int main(void)
 {
     FILE *fp;
-    fp = fopen("test.fat32", "w");
+    fp = fopen("/tmp/test.fat32", "w");
     if (fp == NULL)
     {
         printf("Failed to create file\n");
