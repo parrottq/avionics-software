@@ -70,12 +70,6 @@ enum fat_builder_pass_type
 
 struct fat_builder_pass_total_chunks
 {
-    /* Number of file chunks */
-    uint32_t chunk_count;
-    /* Number of directory/file entries */
-    uint32_t file_dir_count;
-    /* The directory that has the highest directory index */
-    uint32_t max_dir_index;
 };
 
 struct fat_builder_pass_write_dir_chuck
@@ -96,6 +90,12 @@ struct fat_builder_state
     /* The current directory being searched */
     uint32_t directory;
     uint8_t *buffer;
+    void (*structure_callback)(struct fat_builder_state *, uint32_t *);
+
+    /* Number of file chunks */
+    uint32_t chunk_count;
+    /* Number of directory/file entries */
+    uint32_t file_dir_count;
 
     /* Internal */
     enum fat_builder_pass_type pass_type;
@@ -122,7 +122,7 @@ struct fat_file
  * 
  * @return != 0 if failure
  */
-extern uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*structure_callback)(struct fat_builder_state *), uint8_t *buffer);
+extern uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*structure_callback)(struct fat_builder_state *, uint32_t *), uint8_t *buffer);
 
 /**
  * Given the structure_callback calculate the capacity of the fat partition
@@ -132,7 +132,7 @@ extern uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void 
  * 
  * @return != 0 if failure
  */
-extern uint8_t fat_get_size(void (*structure_callback)(struct fat_builder_state *), uint32_t *size);
+extern uint8_t fat_get_size(void (*structure_callback)(struct fat_builder_state *, uint32_t *), uint32_t *size);
 
 /**
  * Add a file to the fat_builder_state

@@ -8,6 +8,7 @@ enum dirs
 {
     ROOT,
     DIR1,
+    DIR_COUNT,
 };
 
 enum files
@@ -16,8 +17,13 @@ enum files
     FILE2,
 };
 
-void callback(struct fat_builder_state *state)
+void callback(struct fat_builder_state *state, uint32_t *max_dir)
 {
+    *max_dir = DIR_COUNT;
+    if (state == NULL)
+    {
+        return;
+    }
     switch (state->directory)
     {
     case ROOT:
