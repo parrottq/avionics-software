@@ -19,29 +19,8 @@
 
 #define INTEGER_DIVISION_ROUND_UP(dividend, divisor) ((dividend / divisor) + ((dividend % divisor) > 0))
 
-/**
- * Get the size of all file and directories in a directory in chunks
- */
-static void fat_builder_get_dir_capacity(void (*structure_callback)(struct fat_builder_state *, uint32_t *), uint32_t *total_chunks, uint32_t dir_index)
+static uint32_t fat_entry_to_chunks(uint32_t current_directory_entries)
 {
-    struct fat_builder_state state;
-    state.pass_type = FAT_BUILDER_PASS_TYPE_TOTAL_CHUCKS;
-
-    /* Reset values */
-    state.chunk_count = 0;
-    state.file_dir_count = 0;
-
-    state.directory = dir_index;
-
-    /* Call the callback to populate state */
-    uint32_t dir_size = 0;
-    structure_callback(&state, &dir_size);
-
-    /* Add the chunks from files */
-    *total_chunks += state.chunk_count;
-
-    /* Calculate the chunks added from directories */
-    uint32_t current_directory_entries = state.file_dir_count;
     uint32_t current_directory_chunks = 0;
     if (current_directory_entries > 0)
     {
@@ -53,7 +32,35 @@ static void fat_builder_get_dir_capacity(void (*structure_callback)(struct fat_b
         /* Directories must be at least one chunk big even if empty */
         current_directory_chunks = 1;
     }
-    *total_chunks += current_directory_chunks;
+    return current_directory_chunks;
+}
+
+/**
+ * Convert states into sector capacity
+ */
+static void fat_state_get_capacity(struct fat_builder_state *state, uint32_t *dir_size)
+{
+    /* Add the chunks from files */
+    *dir_size += state->chunk_count;
+
+    /* Calculate the chunks added from directories */
+    *dir_size += fat_entry_to_chunks(state->file_dir_count);
+}
+
+/**
+ * Get the size of all file and directories in a directory in chunks
+ */
+static void fat_builder_get_dir_capacity(void (*structure_callback)(struct fat_builder_state *, uint32_t *), struct fat_builder_state *state)
+{
+    state->pass_type = FAT_BUILDER_PASS_TYPE_TOTAL_CHUCKS;
+
+    /* Reset values */
+    state->chunk_count = 0;
+    state->file_dir_count = 0;
+
+    /* Call the callback to populate state */
+    uint32_t dir_size = 0;
+    structure_callback(state, &dir_size);
 }
 
 /**
@@ -69,20 +76,22 @@ static uint8_t fat_builder_get_capacity_until(void (*structure_callback)(struct 
     for (uint32_t dir_index = 0; dir_index < max_dir; dir_index++)
     {
         /* Calculate the chunks added from directories */
-        uint32_t current_directory_chunks = 0;
         state.directory = dir_index;
-        fat_builder_get_dir_capacity(structure_callback, &current_directory_chunks, dir_index);
-        *total_chunks += current_directory_chunks;
+
+        /* Populate the state with sector data */
+        fat_builder_get_dir_capacity(structure_callback, &state);
+
+        /* Extract it into total_chunks */
+        fat_state_get_capacity(&state, total_chunks);
     }
 
     return 0;
 }
 
-
 /**
  * Get the size of all files and directories excluding file allocation table and reserved chunks.
  */
-static uint8_t fat_builder_get_capacity(void (*structure_callback)(struct fat_builder_state *, uint32_t *), uint32_t *total_chunks)
+static uint8_t fat_builder_get_capacity_all(void (*structure_callback)(struct fat_builder_state *, uint32_t *), uint32_t *total_chunks)
 {
     uint32_t max_dir = 0;
     structure_callback(NULL, &max_dir);
@@ -117,6 +126,7 @@ static uint8_t fat_builder_write_dir(void (*structure_callback)(struct fat_build
 
 uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*structure_callback)(struct fat_builder_state *, uint32_t *), uint8_t *buffer)
 {
+    // TODO: FAT implement (sector allocation table)
     for (uint16_t i = 0; i < 512; i++)
     {
         buffer[i] = 0;
@@ -149,7 +159,9 @@ uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*struc
         sector->BPB_SecPerTrk = 32;
         sector->BPB_NumHeads = 64;
         sector->BPB_HiddSec = 0;
-        sector->BPB_TotSec32 = 0; // TODO: Calculate total sectors
+        uint32_t total_sectors = 0;
+        fat_builder_get_capacity_all(structure_callback, &total_sectors);
+        sector->BPB_TotSec32 = total_sectors; // TODO: Verify that fat_get_size not what's needed
 
         sector->BPB_FATSz32 = 0; // TODO: total sec * 4 (32bits) / 512
         sector->BPB_ExtFlags = 0;
@@ -197,17 +209,50 @@ uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*struc
         sector->FSI_Free_Count = 0xffffffff;
         sector->FSI_Nxt_Free = 0xffffffff;
     }
-    else if (block == 2)
+    else if (block >= 2)
     {
-        // TODO: This is hard coded and should be generated based on the fs structure callback
-        fat_builder_write_dir(structure_callback, buffer, 0, 0);
+        uint32_t cluster = block - 2;
+
+        struct fat_builder_state state;
+
+        /* Loop until this the directory is in the range of the block */
+        for (uint32_t dir = 0; dir < 64; dir++)
+        {
+            state.directory = dir;
+            fat_builder_get_dir_capacity(structure_callback, &state);
+
+            uint32_t sectors_allocated = 0;
+            fat_state_get_capacity(&state, &sectors_allocated);
+
+            if (cluster < sectors_allocated)
+            {
+                /* This is the directory */
+                break;
+            }
+
+            cluster -= sectors_allocated;
+        }
+
+        uint32_t directory_sector_count = fat_entry_to_chunks(state.file_dir_count);
+        if (cluster < directory_sector_count) {
+            /* Not a file */
+            file->block = 0xffff;
+
+            /* Directory sector */
+            fat_builder_write_dir(structure_callback, buffer, state.directory, cluster);
+        } else {
+            /* File sector */
+            // TODO: File sector translation
+            file->id = 0;
+            file->block = 0;
+        }
     }
     return 0;
 }
 
 uint8_t fat_get_size(void (*structure_callback)(struct fat_builder_state *, uint32_t *), uint32_t *size)
 {
-    fat_builder_get_capacity(structure_callback, size);
+    fat_builder_get_capacity_all(structure_callback, size);
     *size += FAT_CLUSTER_OFFSET;
     return 0;
 }
@@ -226,15 +271,21 @@ void fat_add_file(struct fat_builder_state *state, uint16_t id, char *name_str, 
         break;
     case FAT_BUILDER_PASS_TYPE_WRITE_DIR_CHUCK:
         // TODO: Handle files larger than 32-bit limit
-        if (state->data.write_dir.ignore_entries > 0) {
+        if (state->data.write_dir.ignore_entries > 0)
+        {
             state->data.write_dir.ignore_entries -= 1;
-        } else {
-            struct fat_directory *entry = (struct fat_directory *) (state->buffer + (sizeof(struct fat_directory) * state->data.write_dir.entry_offset));
+        }
+        else
+        {
+            struct fat_directory *entry = (struct fat_directory *)(state->buffer + (sizeof(struct fat_directory) * state->data.write_dir.entry_offset));
             state->data.write_dir.entry_offset += 1;
             uint8_t str_len = strlen(name_str);
-            if (str_len >= 11){
+            if (str_len >= 11)
+            {
                 memcpy(entry->DIR_Name, name_str, 11);
-            } else {
+            }
+            else
+            {
                 memset(entry->DIR_Name, ' ', 11);
                 memcpy(entry->DIR_Name, name_str, str_len);
             }
@@ -271,15 +322,21 @@ void fat_add_directory(struct fat_builder_state *state, uint16_t id, char *name_
         break;
     case FAT_BUILDER_PASS_TYPE_WRITE_DIR_CHUCK:
         /* Handling same as file in this case except file size is zero */
-        if (state->data.write_dir.ignore_entries > 0) {
+        if (state->data.write_dir.ignore_entries > 0)
+        {
             state->data.write_dir.ignore_entries -= 1;
-        } else {
-            struct fat_directory *entry = (struct fat_directory *) (state->buffer + (sizeof(struct fat_directory) * state->data.write_dir.entry_offset));
+        }
+        else
+        {
+            struct fat_directory *entry = (struct fat_directory *)(state->buffer + (sizeof(struct fat_directory) * state->data.write_dir.entry_offset));
             state->data.write_dir.entry_offset += 1;
             uint8_t str_len = strlen(name_str);
-            if (str_len >= 11){
+            if (str_len >= 11)
+            {
                 memcpy(entry->DIR_Name, name_str, 11);
-            } else {
+            }
+            else
+            {
                 memset(entry->DIR_Name, ' ', 11);
                 memcpy(entry->DIR_Name, name_str, str_len);
             }

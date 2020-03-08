@@ -1,6 +1,8 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "fat.h"
+
 
 uint8_t buffer[512];
 
@@ -54,6 +56,7 @@ int call_all_blocks(FILE *fp)
         switch (requested_block.id)
         {
         case FILE1:
+            memset(buffer, 'a', 512);
             break;
         case FILE2:
             break;
