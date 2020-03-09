@@ -60,6 +60,21 @@ void main(){
     queue_transfer(buffer);
 }
 */
+
+
+/*
+Background
+
+There are 3 regions to a fat32 partition that in order are:
+1. Reserved Region
+Reserved contains the boot sector and fsinfo. If desired some
+boot code could be inserted here as it is of variable size.
+2. File Allocation Region (FAT)
+List of all clusters sizes and file order
+3. Data Region
+Contains directory data and file contents
+*/
+
 enum fat_builder_pass_type
 {
     /* Used to calculate number of sectors */
