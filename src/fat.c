@@ -11,11 +11,13 @@
 
 #include <string.h>
 
+// TODO: Some of these constants should be in fat-standard.h
 /* Boot (1) + FSInfo (1) */
 #define FAT_CLUSTER_OFFSET 2
 
 #define FAT_SECTOR_SIZE 512
 #define FAT_DIR_ENTRY_SIZE 32
+#define FAT_CLUSTER_ENTRY_SIZE 4
 
 #define INTEGER_DIVISION_ROUND_UP(dividend, divisor) ((dividend / divisor) + ((dividend % divisor) > 0))
 
@@ -126,11 +128,12 @@ static uint8_t fat_builder_write_dir(void (*structure_callback)(struct fat_build
 
 uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*structure_callback)(struct fat_builder_state *, uint32_t *), uint8_t *buffer)
 {
-    // TODO: FAT implement (sector allocation table)
+    // TODO: Can we clear this better, maybe the layer above handles this
     for (uint16_t i = 0; i < 512; i++)
     {
         buffer[i] = 0;
     }
+    // TODO: Too much nesting break into functions
     if (block == 0)
     {
         /* Boot sector */
@@ -163,10 +166,10 @@ uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*struc
         fat_builder_get_capacity_all(structure_callback, &total_sectors);
         sector->BPB_TotSec32 = total_sectors; // TODO: Verify that fat_get_size not what's needed
 
-        sector->BPB_FATSz32 = 0; // TODO: total sec * 4 (32bits) / 512
+        sector->BPB_FATSz32 = INTEGER_DIVISION_ROUND_UP(total_sectors * FAT_CLUSTER_ENTRY_SIZE, FAT_SECTOR_SIZE); // TODO: total sec * 4 (32bits) / 512
         sector->BPB_ExtFlags = 0;
         sector->BPB_FSVer = 0;
-        sector->BPB_RootClus = 2; // TODO: Make meaningfull
+        sector->BPB_RootClus = 2; // TODO: Make meaningful
         sector->BPB_FSInfo = 1;
         sector->BPB_BkBootSec = 0;
 
@@ -209,42 +212,63 @@ uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*struc
         sector->FSI_Free_Count = 0xffffffff;
         sector->FSI_Nxt_Free = 0xffffffff;
     }
+    // TODO: Better reserved region handling
     else if (block >= 2)
     {
-        uint32_t cluster = block - 2;
+        uint32_t cluster = block - FAT_CLUSTER_OFFSET;
+        // TODO: FAT implement (sector allocation table)
+        uint32_t total_sectors = 0;
+        fat_builder_get_capacity_all(structure_callback, &total_sectors);
+        uint32_t fat_size = INTEGER_DIVISION_ROUND_UP(total_sectors * FAT_CLUSTER_ENTRY_SIZE, FAT_SECTOR_SIZE);
 
-        struct fat_builder_state state;
-
-        /* Loop until this the directory is in the range of the block */
-        for (uint32_t dir = 0; dir < 64; dir++)
+        if (cluster < fat_size)
         {
-            state.directory = dir;
-            fat_builder_get_dir_capacity(structure_callback, &state);
+            /* You have entered the FAT zone */
+        }
+        else
+        {
+            /* You have entered the data region */
+            // TODO: Small modifications are needed to make this work
+            #if 0
+            uint32_t cluster = block - 2;
 
-            uint32_t sectors_allocated = 0;
-            fat_state_get_capacity(&state, &sectors_allocated);
+            struct fat_builder_state state;
 
-            if (cluster < sectors_allocated)
+            /* Loop until this the directory is in the range of the block */
+            for (uint32_t dir = 0; dir < 64; dir++)
             {
-                /* This is the directory */
-                break;
+                state.directory = dir;
+                fat_builder_get_dir_capacity(structure_callback, &state);
+
+                uint32_t sectors_allocated = 0;
+                fat_state_get_capacity(&state, &sectors_allocated);
+
+                if (cluster < sectors_allocated)
+                {
+                    /* This is the directory */
+                    break;
+                }
+
+                cluster -= sectors_allocated;
             }
 
-            cluster -= sectors_allocated;
-        }
+            uint32_t directory_sector_count = fat_entry_to_chunks(state.file_dir_count);
+            if (cluster < directory_sector_count)
+            {
+                /* Not a file */
+                file->block = 0xffff;
 
-        uint32_t directory_sector_count = fat_entry_to_chunks(state.file_dir_count);
-        if (cluster < directory_sector_count) {
-            /* Not a file */
-            file->block = 0xffff;
-
-            /* Directory sector */
-            fat_builder_write_dir(structure_callback, buffer, state.directory, cluster);
-        } else {
-            /* File sector */
-            // TODO: File sector translation
-            file->id = 0;
-            file->block = 0;
+                /* Directory sector */
+                fat_builder_write_dir(structure_callback, buffer, state.directory, cluster);
+            }
+            else
+            {
+                /* File sector */
+                // TODO: File sector translation
+                file->id = 0;
+                file->block = 0;
+            }
+            #endif
         }
     }
     return 0;
@@ -252,7 +276,11 @@ uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*struc
 
 uint8_t fat_get_size(void (*structure_callback)(struct fat_builder_state *, uint32_t *), uint32_t *size)
 {
+    /* Data region */
     fat_builder_get_capacity_all(structure_callback, size);
+    /* FAT region */
+    *size += INTEGER_DIVISION_ROUND_UP((*size * 4), FAT_SECTOR_SIZE);
+    /* Reserved region */
     *size += FAT_CLUSTER_OFFSET;
     return 0;
 }
