@@ -81,6 +81,8 @@ enum fat_builder_pass_type
     FAT_BUILDER_PASS_TYPE_TOTAL_CHUCKS,
     /* Used to write directory entries */
     FAT_BUILDER_PASS_TYPE_WRITE_DIR_CHUCK,
+    /* Used to write the File Allocation Table (FAT) */
+    FAT_BUILDER_PASS_TYPE_WRITE_FAT,
 };
 
 struct fat_builder_pass_total_chunks
@@ -95,9 +97,18 @@ struct fat_builder_pass_write_dir_chuck
     uint32_t entry_offset;
 };
 
+struct fat_builder_pass_write_fat
+{
+    /* Ignore the first n entries */
+    uint32_t ignore_entries;
+    /* Point to the head of entries */
+    uint32_t entry_offset;
+};
+
 union fat_builder_pass_type_data {
     struct fat_builder_pass_total_chunks total_chunks;
     struct fat_builder_pass_write_dir_chuck write_dir;
+    struct fat_builder_pass_write_fat write_fat;
 };
 
 struct fat_builder_state

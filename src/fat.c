@@ -227,9 +227,9 @@ uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*struc
         }
         else
         {
-            /* You have entered the data region */
-            // TODO: Small modifications are needed to make this work
-            #if 0
+/* You have entered the data region */
+// TODO: Small modifications are needed to make this work
+#if 0
             uint32_t cluster = block - 2;
 
             struct fat_builder_state state;
@@ -268,7 +268,7 @@ uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*struc
                 file->id = 0;
                 file->block = 0;
             }
-            #endif
+#endif
         }
     }
     return 0;
@@ -287,10 +287,24 @@ uint8_t fat_get_size(void (*structure_callback)(struct fat_builder_state *, uint
 
 void fat_add_file(struct fat_builder_state *state, uint16_t id, char *name_str, uint64_t size)
 {
+    if (state->directory != id)
+    {
+        return;
+    }
+
     /* Add file chunks using interger division that rounds up */
-    state->chunk_count += INTEGER_DIVISION_ROUND_UP(size, FAT_SECTOR_SIZE);
+    uint64_t chunks = INTEGER_DIVISION_ROUND_UP(size, FAT_SECTOR_SIZE);
+    if (chunks > 0)
+    {
+        state->chunk_count += INTEGER_DIVISION_ROUND_UP(size, FAT_SECTOR_SIZE);
+    }
+    else
+    {
+        state->chunk_count += 1;
+    }
+
     /* Count another directory entry */
-    state->file_dir_count += INTEGER_DIVISION_ROUND_UP(size, 0xffffffff);
+    state->file_dir_count += size == 0 ? 1 : INTEGER_DIVISION_ROUND_UP(size, 0xffffffff);
 
     switch (state->pass_type)
     {
@@ -335,6 +349,14 @@ void fat_add_file(struct fat_builder_state *state, uint16_t id, char *name_str, 
             entry->DIR_FstClusLO = current_chunk & 0xffff;
         }
         break;
+    case FAT_BUILDER_PASS_TYPE_WRITE_FAT:
+        if (state->data.write_fat.ignore_entries > 0) {
+            state->data.write_fat.ignore_entries -= 0;
+        } else {
+            
+
+            state->data.write_fat.entry_offset += 1;
+        }
     }
 }
 
@@ -359,6 +381,7 @@ void fat_add_directory(struct fat_builder_state *state, uint16_t id, char *name_
             struct fat_directory *entry = (struct fat_directory *)(state->buffer + (sizeof(struct fat_directory) * state->data.write_dir.entry_offset));
             state->data.write_dir.entry_offset += 1;
             uint8_t str_len = strlen(name_str);
+            // TODO: String formater function
             if (str_len >= 11)
             {
                 memcpy(entry->DIR_Name, name_str, 11);
