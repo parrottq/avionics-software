@@ -12,6 +12,28 @@
 
 #include <stdint.h>
 
+/**
+ * Represents the minimum number of reserved sectors
+ * needed. Boot (1) + FSInfo (1) = 2
+ */
+#define FAT_RESERVED_SECTORS 2
+
+/**
+ * Cluster offset is the number of entries in the FAT
+ * that are reserved.
+ */
+#define FAT_CLUSTER_OFFSET 2
+
+/**
+ * Size of a directory entry in bytes.
+ */
+#define FAT_DIR_ENTRY_SIZE 32
+
+/**
+ * Size of a FAT entry.
+ */
+#define FAT_ENTRY_SIZE sizeof(uint32_t)
+
 // Ignore warnings in this file about inefficient alignment
 #pragma GCC diagnostic ignored "-Wattributes"
 #pragma GCC diagnostic ignored "-Wpacked"
