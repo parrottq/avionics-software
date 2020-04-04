@@ -129,6 +129,7 @@ static uint8_t fat_builder_write_dir(void (*structure_callback)(struct fat_build
 uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*structure_callback)(struct fat_builder_state *, uint32_t *), uint8_t *buffer)
 {
     // TODO: Can we clear this better, maybe the layer above handles this
+    printf("%li\n", block);
     for (uint16_t i = 0; i < 512; i++)
     {
         buffer[i] = 0;
@@ -136,6 +137,7 @@ uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*struc
     // TODO: Too much nesting break into functions
     if (block == 0)
     {
+        printf("Boot block\n");
         /* Boot sector */
 
         /* Not a file block */
@@ -195,6 +197,7 @@ uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*struc
     else if (block == 1)
     {
         /* FSinfo */
+        printf("FSInfo\n");
 
         /* Not a file block */
         file->block = 0xffff;
@@ -215,61 +218,74 @@ uint8_t fat_translate_sector(uint64_t block, struct fat_file *file, void (*struc
     // TODO: Better reserved region handling
     else if (block >= 2)
     {
-        uint32_t cluster = block - FAT_CLUSTER_OFFSET;
-        // TODO: FAT implement (sector allocation table)
-        uint32_t total_sectors = 0;
-        fat_builder_get_capacity_all(structure_callback, &total_sectors);
-        uint32_t fat_size = INTEGER_DIVISION_ROUND_UP(total_sectors * FAT_CLUSTER_ENTRY_SIZE, FAT_SECTOR_SIZE);
-
-        if (cluster < fat_size)
+        printf("Dyn: ");
+        block -= 2;
+        // Entering cluster zone
+        uint64_t data_size_byte = 0;
+        uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * 128);
+        uint64_t dir_size_cluster = 1;
+        uint64_t cluster_count = dir_size_cluster + file_size_cluster + INTEGER_DIVISION_ROUND_UP(file_size_cluster, 128 * 512 / 4);
+        uint32_t fat_size_cluster = INTEGER_DIVISION_ROUND_UP(cluster_count, 128 * 512 / 4);
+        // TODO: Change order so files is first checked
+        if (block < (fat_size_cluster * 128))
         {
-            /* You have entered the FAT zone */
-        }
-        else
-        {
-/* You have entered the data region */
-// TODO: Small modifications are needed to make this work
-#if 0
-            uint32_t cluster = block - 2;
+            // FAT
+            printf("FAT:\n");
 
-            struct fat_builder_state state;
-
-            /* Loop until this the directory is in the range of the block */
-            for (uint32_t dir = 0; dir < 64; dir++)
+            // FAT clusters
+            // 128 entries per sector
+            uint64_t fat_entry = 0;
+            fat_entry += block * 128;
+            for (uint32_t entry_offset = 0; entry_offset < 512; entry_offset += 4)
             {
-                state.directory = dir;
-                fat_builder_get_dir_capacity(structure_callback, &state);
-
-                uint32_t sectors_allocated = 0;
-                fat_state_get_capacity(&state, &sectors_allocated);
-
-                if (cluster < sectors_allocated)
+                uint32_t *entry = (uint32_t *)buffer + entry_offset;
+                if (fat_entry < fat_size_cluster)
                 {
-                    /* This is the directory */
-                    break;
+                    printf("FAT\n");
+                    // FAT entry
+                    if ((fat_size_cluster - 1) == fat_entry)
+                    {
+                        // End of cluster chain
+                        *entry = 0xffffffff;
+                    }
+                    else
+                    {
+                        // Point to next cluster
+                        *entry = fat_entry + 1;
+                    }
                 }
-
-                cluster -= sectors_allocated;
+                else if (fat_entry < (fat_size_cluster + dir_size_cluster))
+                {
+                    printf("DIR\n");
+                    // Directory entry
+                    *entry = 0xffffffff;
+                }
+                else
+                {
+                    printf("File\n");
+                    // File entry
+                    uint64_t fat_file_entry = fat_entry - (fat_size_cluster + dir_size_cluster);
+                    if (fat_file_entry % (((uint64_t)1) << (32 - 9)) == 0)
+                    { // TODO: Check "== 0"? Should this be
+                        *entry = 0xffffffff;
+                    }
+                    else
+                    {
+                        *entry = fat_entry + 1;
+                    }
+                }
+                printf("\tSector: %li Entry: %li Value: %li\n", block + 2, fat_entry, *entry);
+                fat_entry++;
+                // TODO: Unallocated
             }
 
-            uint32_t directory_sector_count = fat_entry_to_chunks(state.file_dir_count);
-            if (cluster < directory_sector_count)
-            {
-                /* Not a file */
-                file->block = 0xffff;
+            // DIR cluster
 
-                /* Directory sector */
-                fat_builder_write_dir(structure_callback, buffer, state.directory, cluster);
-            }
-            else
-            {
-                /* File sector */
-                // TODO: File sector translation
-                file->id = 0;
-                file->block = 0;
-            }
-#endif
+            // File clusters
         }
+        // DIR
+
+        // FILES
     }
     return 0;
 }
@@ -350,10 +366,12 @@ void fat_add_file(struct fat_builder_state *state, uint16_t id, char *name_str, 
         }
         break;
     case FAT_BUILDER_PASS_TYPE_WRITE_FAT:
-        if (state->data.write_fat.ignore_entries > 0) {
+        if (state->data.write_fat.ignore_entries > 0)
+        {
             state->data.write_fat.ignore_entries -= 0;
-        } else {
-            
+        }
+        else
+        {
 
             state->data.write_fat.entry_offset += 1;
         }
