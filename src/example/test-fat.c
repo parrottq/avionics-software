@@ -3,66 +3,35 @@
 
 #include "fat.h"
 
-
 uint8_t buffer[512];
 
-enum dirs
+void call_all_blocks(FILE *fp)
 {
-    ROOT,
-    DIR1,
-    DIR_COUNT,
-};
+    uint64_t size = 512 * 4 * 70000;
 
-enum files
-{
-    FILE1,
-    FILE2,
-};
+    uint32_t total_sectors = fat_get_total_sectors(size);
+    printf("Capacity %lu Sector count %u\n", size, total_sectors);
 
-void callback(struct fat_builder_state *state, uint32_t *max_dir)
-{
-    *max_dir = DIR_COUNT;
-    if (state == NULL)
+    for (uint32_t i = 0; i < total_sectors; i++)
     {
-        return;
-    }
-    switch (state->directory)
-    {
-    case ROOT:
-        fat_add_file(state, FILE1, "base", 1);
-        fat_add_directory(state, DIR1, "dir1");
-        break;
-    case DIR1:
-        fat_add_file(state, FILE2, "stuff", 1);
-        break;
-    };
-}
-
-int call_all_blocks(FILE *fp)
-{
-    uint32_t size = 0;
-    fat_get_size(callback, &size);
-    printf("Capacity %i\n", size);
-
-    for (uint32_t i = 0; i < size; i++)
-    {
-        if (i < 100)
+        if (i < 10000 || i % 1000 == 0)
         {
-            printf("Sector %i\n", i);
+            printf("\nSector %u\n", i);
         }
-        struct fat_file requested_block;
-        fat_translate_sector(i, &requested_block, callback, buffer);
 
-        switch (requested_block.id)
+        uint64_t sector = fat_translate_sector(i, size, buffer);
+        if (sector != ~((uint64_t)0))
         {
-        case FILE1:
-            memset(buffer, 'a', 512);
-            break;
-        case FILE2:
-            break;
-        };
+            // Is part of the file sector is offset
+            printf("Offset: %lu\n", sector);
+            char ch = 0;
+            memset(buffer, ch, 512);
+            uint64_t *entry = (uint64_t *)buffer;
+            *entry = sector;
+        }
 
         fwrite(buffer, sizeof(uint8_t), sizeof(buffer), fp);
+        fflush(fp);
     }
 }
 
