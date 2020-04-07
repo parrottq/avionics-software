@@ -117,7 +117,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
     // Entering cluster zone
     else if (block >= 2)
     {
-        printf("Dyn: ");
+        printf("Dyn Section\n");
         block -= 2;
         uint64_t data_size_byte = size;
         uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * 128);
@@ -170,28 +170,32 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
                     printf("%li\n", fat_file_entry);
                     // Rollover is the number of cluster per file
                     uint64_t rollover = 3;
-                    //if (fat_file_entry % (((uint64_t)1) << (32 - 9)) == 0)
-                    if (fat_file_entry % rollover == rollover - 1)
-                    { // TODO: Check "== 0"? Should this be
+
+                    if (fat_file_entry > file_size_cluster)
+                    {
+                        // Outside the data bound, mark unallocated
+                        *entry = 0;
+                    }
+                    else if (fat_file_entry % rollover == rollover - 1 || fat_file_entry == file_size_cluster)
+                    {
+                        // End of the file
+                        // Can be triggered by exceeding a file size (rollover) or the end of the data bound
                         *entry = 0xffffffff;
                     }
                     else
                     {
+                        // In data bound, point to next entry to make clusters continuous
                         *entry = fat_entry + 1;
                     }
                 }
                 printf("\tSector: %li Entry: %li Value: %li\n", block + 2, fat_entry, *entry);
                 fat_entry++;
-                // TODO: Unallocated
             }
 
             // DIR cluster
 
             // File clusters
         }
-        // DIR
-
-        // FILES
     }
 
     if (is_file_sector == 0)
