@@ -20,7 +20,8 @@
 #define FAT_DIR_ENTRY_SIZE 32
 #define FAT_CLUSTER_ENTRY_SIZE 4
 
-#define INTEGER_DIVISION_ROUND_UP(dividend, divisor) ((dividend / divisor) + ((dividend % divisor) > 0))
+// The brackets around each variable are necessary so inline math works correctly
+#define INTEGER_DIVISION_ROUND_UP(dividend, divisor) (((dividend) / (divisor)) + (((dividend) % (divisor)) > 0))
 
 uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
 {
@@ -113,16 +114,18 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         sector->FSI_Nxt_Free = 0xffffffff;
     }
     // TODO: Better reserved region handling
+    // Entering cluster zone
     else if (block >= 2)
     {
         printf("Dyn: ");
         block -= 2;
-        // Entering cluster zone
-        uint64_t data_size_byte = 0;
+        uint64_t data_size_byte = size;
         uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * 128);
         uint64_t dir_size_cluster = 1;
         uint64_t cluster_count = dir_size_cluster + file_size_cluster + INTEGER_DIVISION_ROUND_UP(file_size_cluster, 128 * 512 / 4);
+        printf("Cluster count: %li\n", cluster_count);
         uint32_t fat_size_cluster = INTEGER_DIVISION_ROUND_UP(cluster_count, 128 * 512 / 4);
+        printf("FAT cluster size: %li\n", fat_size_cluster);
         // TODO: Change order so files is first checked
         if (block < (fat_size_cluster * 128))
         {
@@ -161,10 +164,14 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
                 }
                 else
                 {
-                    printf("File\n");
+                    printf("File ");
                     // File entry
                     uint64_t fat_file_entry = fat_entry - (fat_size_cluster + dir_size_cluster);
-                    if (fat_file_entry % (((uint64_t)1) << (32 - 9)) == 0)
+                    printf("%li\n", fat_file_entry);
+                    // Rollover is the number of cluster per file
+                    uint64_t rollover = 3;
+                    //if (fat_file_entry % (((uint64_t)1) << (32 - 9)) == 0)
+                    if (fat_file_entry % rollover == rollover - 1)
                     { // TODO: Check "== 0"? Should this be
                         *entry = 0xffffffff;
                     }
