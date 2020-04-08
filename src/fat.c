@@ -14,7 +14,7 @@
 
 // TODO: Some of these constants should be in fat-standard.h
 /* Boot (1) + FSInfo (1) */
-#define FAT_CLUSTER_OFFSET 2
+#define FAT_CLUSTER_OFFSET (128 * 2)
 
 #define FAT_SECTOR_SIZE 512
 #define FAT_DIR_ENTRY_SIZE 32
@@ -46,8 +46,6 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         sector->BS_jmpBoot[1] = 0x58;
         sector->BS_jmpBoot[2] = 0x90;
 
-        // TODO: Give name
-        sector->BS_OEMName = 0;
         sector->BPB_BytsPerSec = FAT_SECTOR_SIZE;
         sector->BPB_SecPerClus = 1;
         // TODO: Reserved chucks check
@@ -69,7 +67,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         sector->BPB_FATSz32 = INTEGER_DIVISION_ROUND_UP(total_sectors * FAT_CLUSTER_ENTRY_SIZE, FAT_SECTOR_SIZE); // TODO: total sec * 4 (32bits) / 512
         sector->BPB_ExtFlags = 0;
         sector->BPB_FSVer = 0;
-        sector->BPB_RootClus = 2; // TODO: Make meaningful
+        sector->BPB_RootClus = 2; // TODO: Hard coded value
         sector->BPB_FSInfo = 1;
         sector->BPB_BkBootSec = 0;
 
@@ -84,10 +82,13 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         sector->BS_VolID = 0;
         for (uint8_t i = 0; i < 11; i++)
         {
-            sector->BS_VolLab[i] = 0;
+            sector->BS_VolLab[i] = ' ';
         }
-        const char fat_volume_label[] = "FAT     ";
-        memcpy(sector->BS_VolLab, fat_volume_label, 8);
+        const char fat_volume_label[] = "FAT32      ";
+        memcpy(sector->BS_VolLab, fat_volume_label, 11);
+        memcpy(&sector->BS_FilSysType, fat_volume_label, 8);
+        const char oem_name[] = "CuInSpac";
+        memcpy(&sector->BS_OEMName, oem_name, 8);
 
         buffer[510] = 0x55;
         buffer[511] = 0xAA;
@@ -115,10 +116,11 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
     }
     // TODO: Better reserved region handling
     // Entering cluster zone
-    else if (block >= 2)
+    else if (block >= FAT_CLUSTER_OFFSET)
     {
-        printf("Dyn Section\n");
-        block -= 2;
+        printf("Dyn Section: ");
+        block -= FAT_CLUSTER_OFFSET;
+        // TODO: Document all these variables
         uint64_t data_size_byte = size;
         uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * 128);
         uint64_t dir_size_cluster = 1;
@@ -126,11 +128,12 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         printf("Cluster count: %li\n", cluster_count);
         uint32_t fat_size_cluster = INTEGER_DIVISION_ROUND_UP(cluster_count, 128 * 512 / 4);
         printf("FAT cluster size: %li\n", fat_size_cluster);
+        const uint64_t rollover = 3;
         // TODO: Change order so files is first checked
         if (block < (fat_size_cluster * 128))
         {
             // FAT
-            printf("FAT:\n");
+            printf("FAT\n");
 
             is_file_sector = 0;
 
@@ -169,7 +172,6 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
                     uint64_t fat_file_entry = fat_entry - (fat_size_cluster + dir_size_cluster);
                     printf("%li\n", fat_file_entry);
                     // Rollover is the number of cluster per file
-                    uint64_t rollover = 3;
 
                     if (fat_file_entry > file_size_cluster)
                     {
@@ -192,12 +194,69 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
                 fat_entry++;
             }
 
+            // TODO: Move 128 constants somewhere
+        }
+        else if (block < ((fat_size_cluster + dir_size_cluster) * 128))
+        {
+            printf("DIR\n");
             // DIR cluster
+            const uint16_t dir_entries_per_sector = (512 / 32);
+            uint32_t dir_entry = dir_entries_per_sector * (block - (fat_size_cluster * 128));
+            for (uint16_t dir_entry_offset = 0; dir_entry_offset < 512; dir_entry_offset += sizeof(struct fat_directory))
+            {
+                struct fat_directory *entry = (struct fat_directory *)buffer + dir_entry_offset;
+                if (data_size_byte > (dir_entry * rollover * 128 * 512))
+                {
+                    // TODO: First 2 entries should be '.' and '..'
 
-            // File clusters
+                    // TODO: Check if formated correctly
+                    // Name of the file is just a number
+                    snprintf(entry->DIR_Name, sizeof(entry->DIR_Name), "%08x   ", dir_entry);
+                    entry->DIR_Name[11] = ' ';
+                    // Read-only flag
+                    entry->DIR_Attr = 1;
+                    entry->DIR_NTRes = 0;
+                    entry->DIR_CrtTimeTenth = 0;
+                    entry->DIR_CrtTime = 0;
+                    entry->DIR_CrtDate = 0;
+                    entry->DIR_LstAccDate = 0;
+                    entry->DIR_WrtTime = 0;
+                    entry->DIR_WrtDate = 0;
+
+                    // The location of the first cluster
+                    uint32_t start_cluster = dir_entry * rollover;
+                    entry->DIR_FstClusHI = (uint16_t)(start_cluster >> 16) & 0xffff;
+                    entry->DIR_FstClusLO = (uint16_t)start_cluster & 0xffff;
+
+                    // The size of the file
+                    uint64_t file_size_left_bytes = data_size_byte - (dir_entry * rollover * 128 * 512);
+                    if (file_size_left_bytes > (512 * 128))
+                    {
+                        entry->DIR_FileSize = rollover * 128 * 512;
+                    }
+                    else
+                    {
+                        entry->DIR_FileSize = file_size_left_bytes;
+                    }
+                    printf("Start cluster: %u file_size_left_bytes: %lu size: %u\n", start_cluster, file_size_left_bytes, entry->DIR_FileSize);
+                }
+                else
+                {
+                    memset(entry, 0, sizeof(struct fat_directory));
+                    printf("Empty dir entry\n");
+                }
+                // Next dir entry, keep in sync with loop
+                dir_entry++;
+            }
+        }
+        else
+        {
+            // File
+            printf("FILE\n");
         }
     }
 
+    // File clusters
     if (is_file_sector == 0)
     {
         // TODO: Make this mean something
