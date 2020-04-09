@@ -47,7 +47,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
 
     // TODO: Document all these variables
     uint64_t data_size_byte = size;
-    uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * 128);
+    uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * FAT_SECTOR_PER_CLUSTER);
     const uint64_t dir_size_cluster = 1;
     uint32_t fat_size_sector = INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, 512 / 4);
     const uint64_t rollover = 3;
@@ -66,7 +66,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         memcpy(&sector->BS_OEMName, oem_name, 8);
 
         sector->BPB_BytsPerSec = FAT_SECTOR_SIZE;
-        sector->BPB_SecPerClus = 1;
+        sector->BPB_SecPerClus = FAT_SECTOR_PER_CLUSTER;
         sector->BPB_RsvdSecCnt = FAT_RESERVED_OFFSET;
         // TODO: No second fat
         sector->BPB_NumFATs = 1;
@@ -78,13 +78,13 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         sector->BPB_SecPerTrk = 32;
         sector->BPB_NumHeads = 64;
         sector->BPB_HiddSec = 0;
-        uint32_t total_sectors = FAT_RESERVED_OFFSET + fat_size_sector + (128 * file_size_cluster);
+        uint32_t total_sectors = FAT_RESERVED_OFFSET + fat_size_sector + (FAT_SECTOR_PER_CLUSTER * file_size_cluster);
         sector->BPB_TotSec32 = total_sectors;
 
         sector->BPB_FATSz32 = fat_size_sector;
         sector->BPB_ExtFlags = 0;
         sector->BPB_FSVer = 0;
-        sector->BPB_RootClus = 2; // TODO: Hard coded value
+        sector->BPB_RootClus = FAT_CLUSTER_OFFSET;
         sector->BPB_FSInfo = 1;
         sector->BPB_BkBootSec = 0;
 
@@ -121,7 +121,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         buffer[510] = 0x55;
         buffer[511] = 0xAA;
 
-        struct fat_file_system_info *sector = (struct fat_file_system_info *)buffer + 484;
+        struct fat_file_system_info *sector = (struct fat_file_system_info *)(buffer + 484);
         sector->FSI_StrucSig = 0x61417272;
         sector->FSI_Free_Count = 0xffffffff;
         sector->FSI_Nxt_Free = 0xffffffff;
@@ -132,24 +132,38 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
     }
     else if (block < (FAT_RESERVED_OFFSET + fat_size_sector))
     {
+        // FAT sectors
         uint64_t current_block = block;
         current_block -= FAT_RESERVED_OFFSET;
         // TODO: Change order so files is first checked
-        // FAT
         printf("FAT\n");
 
         // FAT clusters
         // 128 entries per sector
         uint64_t fat_entry = 0;
-        fat_entry += current_block * 128;
+        fat_entry += current_block * FAT_SECTOR_PER_CLUSTER;
         for (uint32_t entry_offset = 0; entry_offset < 512; entry_offset += 4)
         {
-            uint32_t *entry = (uint32_t *)buffer + entry_offset;
-            if (fat_entry < dir_size_cluster)
+            uint32_t *entry = (uint32_t *)(buffer + entry_offset);
+            if (fat_entry < FAT_CLUSTER_OFFSET)
+            {
+                printf("\tRes cluster: ");
+                if (fat_entry == 0)
+                {
+                    *entry = 0x0ffffff8;
+                    printf("Res 1\n");
+                }
+                else if (fat_entry == 1)
+                {
+                    *entry = 0x0fffffff;
+                    printf("Res 2\n");
+                }
+            }
+            else if (fat_entry < (FAT_CLUSTER_OFFSET + dir_size_cluster))
             {
                 printf("\tDIR entry\n");
                 // Directory entry
-                *entry = 0xffffffff;
+                *entry = 0x0fffffff;
             }
             else
             {
@@ -168,7 +182,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
                 {
                     // End of the file
                     // Can be triggered by exceeding a file size (rollover) or the end of the data bound
-                    *entry = 0xffffffff;
+                    *entry = 0x0fffffff;
                 }
                 else
                 {
@@ -182,20 +196,26 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
 
         // TODO: Move 128 constants somewhere
     }
-    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + (dir_size_cluster * 128)))
+    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * FAT_CLUSTER_OFFSET * 0))
     {
-        // DIR sectors
+        // Reserved clusters
+        printf("RESERVED CLUSTERS\n");
+    }
+    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (FAT_CLUSTER_OFFSET * 0 + dir_size_cluster)))
+    {
+        // DIR clusters
         uint64_t current_block = block;
         current_block -= FAT_RESERVED_OFFSET;
         current_block -= fat_size_sector;
+        //current_block -= FAT_SECTOR_PER_CLUSTER * FAT_CLUSTER_OFFSET;
         printf("DIR\n");
         // DIR cluster
         const uint16_t dir_entries_per_sector = (512 / 32);
         uint32_t dir_entry = dir_entries_per_sector * current_block;
         for (uint16_t dir_entry_offset = 0; dir_entry_offset < 512; dir_entry_offset += sizeof(struct fat_directory))
         {
-            struct fat_directory *entry = (struct fat_directory *)buffer + dir_entry_offset;
-            if (data_size_byte > (dir_entry * rollover * 128 * 512))
+            struct fat_directory *entry = (struct fat_directory *)(buffer + dir_entry_offset);
+            if (data_size_byte > (dir_entry * rollover * FAT_SECTOR_PER_CLUSTER * 512))
             {
                 printf("\tEntry %i Offset %i\n", dir_entry, dir_entry_offset);
                 // TODO: First 2 entries should be '.' and '..'
@@ -220,10 +240,10 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
                 entry->DIR_FstClusLO = (uint16_t)start_cluster & 0xffff;
 
                 // The size of the file
-                uint64_t file_size_left_bytes = data_size_byte - (dir_entry * rollover * 128 * 512);
-                if (file_size_left_bytes > (512 * 128))
+                uint64_t file_size_left_bytes = data_size_byte - (dir_entry * rollover * FAT_SECTOR_PER_CLUSTER * 512);
+                if (file_size_left_bytes > (512 * FAT_SECTOR_PER_CLUSTER))
                 {
-                    entry->DIR_FileSize = rollover * 128 * 512;
+                    entry->DIR_FileSize = rollover * FAT_SECTOR_PER_CLUSTER * 512;
                 }
                 else
                 {
@@ -240,10 +260,10 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
             dir_entry++;
         }
     }
-    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + 128 * (dir_size_cluster + file_size_cluster)))
+    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (FAT_CLUSTER_OFFSET + dir_size_cluster + file_size_cluster)))
     {
+        // File clusters
     }
-    // File
     else
     {
         // Empty sector
