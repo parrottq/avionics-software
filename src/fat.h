@@ -45,6 +45,9 @@ List of all clusters sizes and file order
 Contains directory data and file contents
 */
 
+// TODO: Document
+extern uint32_t fat_get_total_sectors(uint64_t size);
+
 // TODO: Update
 /**
  * Translates a block number into the current file and it's block number.

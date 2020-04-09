@@ -15,14 +15,27 @@
 // TODO: Some of these constants should be in fat-standard.h
 /* Boot (1) + FSInfo (1) */
 // TODO: Offset might need to be changed to align with clusters
-#define FAT_RESERVED_OFFSET (3)
+#define FAT_RESERVED_SECTORS 2
+#define FAT_CLUSTER_OFFSET 2
+#define FAT_RESERVED_OFFSET (FAT_SECTOR_PER_CLUSTER * FAT_CLUSTER_OFFSET + FAT_RESERVED_SECTORS)
 
 #define FAT_SECTOR_SIZE 512
 #define FAT_DIR_ENTRY_SIZE 32
 #define FAT_CLUSTER_ENTRY_SIZE 4
+#define FAT_SECTOR_PER_CLUSTER 128
 
 // The brackets around each variable are necessary so inline math works correctly
 #define INTEGER_DIVISION_ROUND_UP(dividend, divisor) (((dividend) / (divisor)) + (((dividend) % (divisor)) > 0))
+
+uint32_t fat_get_total_sectors(uint64_t size)
+{
+    // TODO: Dedup this with fat_translate_sector
+    uint64_t data_size_byte = size;
+    uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * FAT_SECTOR_PER_CLUSTER);
+    const uint64_t dir_size_cluster = 1;
+    uint32_t fat_size_sector = INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, 512 / 4);
+    return FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (FAT_CLUSTER_OFFSET + dir_size_cluster + file_size_cluster);
+}
 
 uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
 {
