@@ -15,7 +15,7 @@
 // TODO: Some of these constants should be in fat-standard.h
 /* Boot (1) + FSInfo (1) */
 // TODO: Offset might need to be changed to align with clusters
-#define FAT_RESERVED_OFFSET (2)
+#define FAT_RESERVED_OFFSET (3)
 
 #define FAT_SECTOR_SIZE 512
 #define FAT_DIR_ENTRY_SIZE 32
@@ -27,28 +27,23 @@
 uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
 {
     // TODO: Can we clear this better, maybe the layer above handles this
-    printf("%li\n", block);
     for (uint16_t i = 0; i < 512; i++)
     {
         buffer[i] = 0;
     }
-
-    uint8_t is_file_sector = 0;
 
     // TODO: Document all these variables
     uint64_t data_size_byte = size;
     uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * 128);
     const uint64_t dir_size_cluster = 1;
     uint32_t fat_size_sector = INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, 512 / 4);
+    const uint64_t rollover = 3;
 
     // TODO: Too much nesting break into functions
     if (block == 0)
     {
         printf("Boot block\n");
         /* Boot sector */
-
-        /* Not a file block */
-        is_file_sector = 0;
 
         struct fat_boot_sector_head *sector = (struct fat_boot_sector_head *)buffer;
         sector->BS_jmpBoot[0] = 0xeb;
@@ -105,9 +100,6 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         /* FSinfo */
         printf("FSInfo\n");
 
-        /* Not a file block */
-        is_file_sector = 0;
-
         buffer[0] = 0x52;
         buffer[1] = 0x52;
         buffer[2] = 0x61;
@@ -121,134 +113,128 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         sector->FSI_Free_Count = 0xffffffff;
         sector->FSI_Nxt_Free = 0xffffffff;
     }
-    // TODO: Better reserved region handling
-    // Entering cluster zone
-    else if (block >= FAT_RESERVED_OFFSET)
+    else if (block < FAT_RESERVED_OFFSET)
     {
-        printf("Dyn Section: ");
-        block -= FAT_RESERVED_OFFSET;
-        printf("FAT sector size: %li\n", fat_size_sector);
-        const uint64_t rollover = 3;
+        printf("Reserved sector\n");
+    }
+    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector))
+    {
+        uint64_t current_block = block;
+        current_block -= FAT_RESERVED_OFFSET;
         // TODO: Change order so files is first checked
-        if (block < fat_size_sector)
+        // FAT
+        printf("FAT\n");
+
+        // FAT clusters
+        // 128 entries per sector
+        uint64_t fat_entry = 0;
+        fat_entry += current_block * 128;
+        for (uint32_t entry_offset = 0; entry_offset < 512; entry_offset += 4)
         {
-            // FAT
-            printf("FAT\n");
-
-            is_file_sector = 0;
-
-            // FAT clusters
-            // 128 entries per sector
-            uint64_t fat_entry = 0;
-            fat_entry += block * 128;
-            for (uint32_t entry_offset = 0; entry_offset < 512; entry_offset += 4)
+            uint32_t *entry = (uint32_t *)buffer + entry_offset;
+            if (fat_entry < dir_size_cluster)
             {
-                uint32_t *entry = (uint32_t *)buffer + entry_offset;
-                if (fat_entry < dir_size_cluster)
+                printf("\tDIR entry\n");
+                // Directory entry
+                *entry = 0xffffffff;
+            }
+            else
+            {
+                printf("\tFile entry: ");
+                // File entry
+                uint64_t fat_file_entry = fat_entry - dir_size_cluster;
+                printf("%li\n", fat_file_entry);
+                // Rollover is the number of cluster per file
+
+                if (fat_file_entry > file_size_cluster)
                 {
-                    printf("\tDIR entry\n");
-                    // Directory entry
+                    // Outside the data bound, mark unallocated
+                    *entry = 0;
+                }
+                else if (fat_file_entry % rollover == rollover - 1 || fat_file_entry == file_size_cluster)
+                {
+                    // End of the file
+                    // Can be triggered by exceeding a file size (rollover) or the end of the data bound
                     *entry = 0xffffffff;
                 }
                 else
                 {
-                    printf("\tFile entry: ");
-                    // File entry
-                    uint64_t fat_file_entry = fat_entry - dir_size_cluster;
-                    printf("%li\n", fat_file_entry);
-                    // Rollover is the number of cluster per file
-
-                    if (fat_file_entry > file_size_cluster)
-                    {
-                        // Outside the data bound, mark unallocated
-                        *entry = 0;
-                    }
-                    else if (fat_file_entry % rollover == rollover - 1 || fat_file_entry == file_size_cluster)
-                    {
-                        // End of the file
-                        // Can be triggered by exceeding a file size (rollover) or the end of the data bound
-                        *entry = 0xffffffff;
-                    }
-                    else
-                    {
-                        // In data bound, point to next entry to make clusters continuous
-                        *entry = fat_entry + 1;
-                    }
+                    // In data bound, point to next entry to make clusters continuous
+                    *entry = fat_entry + 1;
                 }
-                printf("\t\tSector: %li Entry: %li Value: %li\n", block + 2, fat_entry, *entry);
-                fat_entry++;
             }
-
-            // TODO: Move 128 constants somewhere
+            printf("\t\tSector: %li Entry: %li Value: %li\n", block, fat_entry, *entry);
+            fat_entry++;
         }
-        else if (block < (fat_size_sector + (dir_size_cluster * 128)))
+
+        // TODO: Move 128 constants somewhere
+    }
+    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + (dir_size_cluster * 128)))
+    {
+        // DIR sectors
+        uint64_t current_block = block;
+        current_block -= FAT_RESERVED_OFFSET;
+        current_block -= fat_size_sector;
+        printf("DIR\n");
+        // DIR cluster
+        const uint16_t dir_entries_per_sector = (512 / 32);
+        uint32_t dir_entry = dir_entries_per_sector * current_block;
+        for (uint16_t dir_entry_offset = 0; dir_entry_offset < 512; dir_entry_offset += sizeof(struct fat_directory))
         {
-            printf("DIR\n");
-            // DIR cluster
-            const uint16_t dir_entries_per_sector = (512 / 32);
-            uint32_t dir_entry = dir_entries_per_sector * (block - fat_size_sector);
-            for (uint16_t dir_entry_offset = 0; dir_entry_offset < 512; dir_entry_offset += sizeof(struct fat_directory))
+            struct fat_directory *entry = (struct fat_directory *)buffer + dir_entry_offset;
+            if (data_size_byte > (dir_entry * rollover * 128 * 512))
             {
-                struct fat_directory *entry = (struct fat_directory *)buffer + dir_entry_offset;
-                if (data_size_byte > (dir_entry * rollover * 128 * 512))
+                printf("\tEntry %i Offset %i\n", dir_entry, dir_entry_offset);
+                // TODO: First 2 entries should be '.' and '..'
+
+                // TODO: Check if formated correctly
+                // Name of the file is just a number
+                snprintf(entry->DIR_Name, sizeof(entry->DIR_Name), "%08x   ", dir_entry);
+                entry->DIR_Name[10] = ' ';
+                // Read-only flag
+                entry->DIR_Attr = 1;
+                entry->DIR_NTRes = 0;
+                entry->DIR_CrtTimeTenth = 0;
+                entry->DIR_CrtTime = 0;
+                entry->DIR_CrtDate = 0;
+                entry->DIR_LstAccDate = 0;
+                entry->DIR_WrtTime = 0;
+                entry->DIR_WrtDate = 0;
+
+                // The location of the first cluster
+                uint32_t start_cluster = dir_entry * rollover;
+                entry->DIR_FstClusHI = (uint16_t)(start_cluster >> 16) & 0xffff;
+                entry->DIR_FstClusLO = (uint16_t)start_cluster & 0xffff;
+
+                // The size of the file
+                uint64_t file_size_left_bytes = data_size_byte - (dir_entry * rollover * 128 * 512);
+                if (file_size_left_bytes > (512 * 128))
                 {
-                    // TODO: First 2 entries should be '.' and '..'
-
-                    // TODO: Check if formated correctly
-                    // Name of the file is just a number
-                    snprintf(entry->DIR_Name, sizeof(entry->DIR_Name), "%08x   ", dir_entry);
-                    entry->DIR_Name[11] = ' ';
-                    // Read-only flag
-                    entry->DIR_Attr = 1;
-                    entry->DIR_NTRes = 0;
-                    entry->DIR_CrtTimeTenth = 0;
-                    entry->DIR_CrtTime = 0;
-                    entry->DIR_CrtDate = 0;
-                    entry->DIR_LstAccDate = 0;
-                    entry->DIR_WrtTime = 0;
-                    entry->DIR_WrtDate = 0;
-
-                    // The location of the first cluster
-                    uint32_t start_cluster = dir_entry * rollover;
-                    entry->DIR_FstClusHI = (uint16_t)(start_cluster >> 16) & 0xffff;
-                    entry->DIR_FstClusLO = (uint16_t)start_cluster & 0xffff;
-
-                    // The size of the file
-                    uint64_t file_size_left_bytes = data_size_byte - (dir_entry * rollover * 128 * 512);
-                    if (file_size_left_bytes > (512 * 128))
-                    {
-                        entry->DIR_FileSize = rollover * 128 * 512;
-                    }
-                    else
-                    {
-                        entry->DIR_FileSize = file_size_left_bytes;
-                    }
-                    printf("Start cluster: %u file_size_left_bytes: %lu size: %u\n", start_cluster, file_size_left_bytes, entry->DIR_FileSize);
+                    entry->DIR_FileSize = rollover * 128 * 512;
                 }
                 else
                 {
-                    memset(entry, 0, sizeof(struct fat_directory));
-                    printf("Empty dir entry\n");
+                    entry->DIR_FileSize = file_size_left_bytes;
                 }
-                // Next dir entry, keep in sync with loop
-                dir_entry++;
+                printf("\tStart cluster: %u file_size_left_bytes: %lu size: %u\n", start_cluster, file_size_left_bytes, entry->DIR_FileSize);
             }
-        }
-        else
-        {
-            // File
-            printf("FILE\n");
+            else
+            {
+                memset(entry, 0, sizeof(struct fat_directory));
+                printf("Empty dir entry\n");
+            }
+            // Next dir entry, keep in sync with loop
+            dir_entry++;
         }
     }
-
-    // File clusters
-    if (is_file_sector == 0)
+    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + 128 * (dir_size_cluster + file_size_cluster)))
     {
-        // TODO: Make this mean something
-        return 0;
     }
+    // File
     else
     {
-        return ~((uint64_t)0);
+        // Empty sector
     }
+
+    return 0;
 }
