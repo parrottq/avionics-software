@@ -74,7 +74,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         sector->BPB_RootEntCnt = 0;
         sector->BPB_TotSec16 = 0;
         /* Removable media */
-        sector->BPB_Media = 0x0f;
+        sector->BPB_Media = 0xf8;
         sector->BPB_FATSz16 = 0;
         sector->BPB_SecPerTrk = 32;
         sector->BPB_NumHeads = 64;
