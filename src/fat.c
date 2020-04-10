@@ -22,7 +22,8 @@
 #define FAT_SECTOR_SIZE 512
 #define FAT_DIR_ENTRY_SIZE 32
 #define FAT_CLUSTER_ENTRY_SIZE 4
-#define FAT_SECTOR_PER_CLUSTER 128
+//#define FAT_SECTOR_PER_CLUSTER 128
+#define FAT_SECTOR_PER_CLUSTER 1
 
 // The brackets around each variable are necessary so inline math works correctly
 #define INTEGER_DIVISION_ROUND_UP(dividend, divisor) (((dividend) / (divisor)) + (((dividend) % (divisor)) > 0))
@@ -169,7 +170,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
             {
                 printf("\tFile entry: ");
                 // File entry
-                uint64_t fat_file_entry = fat_entry - dir_size_cluster;
+                uint64_t fat_file_entry = fat_entry - (dir_size_cluster + FAT_CLUSTER_OFFSET);
                 printf("%li\n", fat_file_entry);
                 // Rollover is the number of cluster per file
 
@@ -235,7 +236,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
                 entry->DIR_WrtDate = 0;
 
                 // The location of the first cluster
-                uint32_t start_cluster = dir_entry * rollover;
+                uint32_t start_cluster = dir_entry * rollover + FAT_CLUSTER_OFFSET + dir_size_cluster;
                 entry->DIR_FstClusHI = (uint16_t)(start_cluster >> 16) & 0xffff;
                 entry->DIR_FstClusLO = (uint16_t)start_cluster & 0xffff;
 
