@@ -95,7 +95,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
 
         sector->BS_DrvNum = 0;
         sector->BS_Reserved1 = 0;
-        sector->BS_BootSig = 0;
+        sector->BS_BootSig = 0x29;
         sector->BS_VolID = 0;
         for (uint8_t i = 0; i < 11; i++)
         {
