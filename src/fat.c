@@ -197,12 +197,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
 
         // TODO: Move 128 constants somewhere
     }
-    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * FAT_CLUSTER_OFFSET * 0))
-    {
-        // Reserved clusters
-        printf("RESERVED CLUSTERS\n");
-    }
-    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (FAT_CLUSTER_OFFSET * 0 + dir_size_cluster)))
+    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * dir_size_cluster))
     {
         // DIR clusters
         uint64_t current_block = block;
@@ -261,8 +256,9 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
             dir_entry++;
         }
     }
-    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (FAT_CLUSTER_OFFSET + dir_size_cluster + file_size_cluster)))
+    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (dir_size_cluster + file_size_cluster)))
     {
+        printf("File\n");
         // File clusters
     }
     else
