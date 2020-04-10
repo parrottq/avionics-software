@@ -142,8 +142,8 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         // FAT clusters
         // 128 entries per sector
         uint64_t fat_entry = 0;
-        fat_entry += current_block * FAT_SECTOR_PER_CLUSTER;
-        for (uint32_t entry_offset = 0; entry_offset < 512; entry_offset += 4)
+        fat_entry += current_block * (FAT_SECTOR_SIZE / sizeof(uint32_t));
+        for (uint32_t entry_offset = 0; entry_offset < 512; entry_offset += sizeof(uint32_t))
         {
             uint32_t *entry = (uint32_t *)(buffer + entry_offset);
             if (fat_entry < FAT_CLUSTER_OFFSET)
