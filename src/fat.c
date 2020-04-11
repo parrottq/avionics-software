@@ -257,11 +257,16 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
     {
         printf("File\n");
         // File clusters
+        uint64_t current_block = block;
+        current_block -= FAT_RESERVED_OFFSET;
+        current_block -= fat_size_sector;
+        current_block -= FAT_SECTOR_PER_CLUSTER * dir_size_cluster;
+        return current_block;
     }
     else
     {
         // Empty sector
     }
 
-    return 0;
+    return ~((uint64_t)0);
 }

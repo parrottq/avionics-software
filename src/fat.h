@@ -59,7 +59,8 @@ extern uint32_t fat_get_total_sectors(uint64_t size);
  * @note If the file.id is 0xffff then this is not a file block and unless the function failed,
  * filesystem data has been written to the buffer. 
  * 
- * @return != 0 if failure
+ * @return if a full uint64_t ~((uint64_t) 0) do nothing, else the sector of data to fill
+ * the block with
  */
 extern uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer);
 
