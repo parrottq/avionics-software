@@ -33,6 +33,8 @@ uint32_t fat_get_total_sectors(uint64_t size)
     // TODO: Dedup this with fat_translate_sector
     uint64_t data_size_byte = size;
     uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * FAT_SECTOR_PER_CLUSTER);
+    // This is a harmless change that stops warning from 'dosfsck'
+    file_size_cluster += 1; // TODO: Document why this is here
     const uint64_t dir_size_cluster = 1;
     uint32_t fat_size_sector = INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, 512 / 4);
     return FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (FAT_CLUSTER_OFFSET + dir_size_cluster + file_size_cluster);
@@ -49,8 +51,10 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
     // TODO: Document all these variables
     uint64_t data_size_byte = size;
     uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * FAT_SECTOR_PER_CLUSTER);
+    file_size_cluster += 1; // TODO: Document why this is here
     const uint64_t dir_size_cluster = 1;
     uint32_t fat_size_sector = INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, 512 / 4);
+    // Rollover is the number of cluster per file
     const uint64_t rollover = 3;
 
     // TODO: Too much nesting break into functions
@@ -102,9 +106,10 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         {
             sector->BS_VolLab[i] = ' ';
         }
-        const char fat_volume_label[] = "FAT32      ";
+        const char fat_volume_label[] = "MCU Board  ";
         memcpy(sector->BS_VolLab, fat_volume_label, 11);
-        memcpy(&sector->BS_FilSysType, fat_volume_label, 8);
+        const char fat_fs_type[] = "FAT32      ";
+        memcpy(&sector->BS_FilSysType, fat_fs_type, 8);
 
         buffer[510] = 0x55;
         buffer[511] = 0xAA;
@@ -140,7 +145,6 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         printf("FAT\n");
 
         // FAT clusters
-        // 128 entries per sector
         uint64_t fat_entry = 0;
         fat_entry += current_block * (FAT_SECTOR_SIZE / sizeof(uint32_t));
         for (uint32_t entry_offset = 0; entry_offset < 512; entry_offset += sizeof(uint32_t))
@@ -172,14 +176,12 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
                 // File entry
                 uint64_t fat_file_entry = fat_entry - (dir_size_cluster + FAT_CLUSTER_OFFSET);
                 printf("%li\n", fat_file_entry);
-                // Rollover is the number of cluster per file
-
-                if (fat_file_entry > file_size_cluster)
+                if (fat_file_entry >= file_size_cluster)
                 {
                     // Outside the data bound, mark unallocated
                     *entry = 0;
                 }
-                else if (fat_file_entry % rollover == rollover - 1 || fat_file_entry == file_size_cluster)
+                else if ((fat_file_entry % rollover) == (rollover - 1) || fat_file_entry == (file_size_cluster - 1))
                 {
                     // End of the file
                     // Can be triggered by exceeding a file size (rollover) or the end of the data bound
@@ -203,7 +205,6 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         uint64_t current_block = block;
         current_block -= FAT_RESERVED_OFFSET;
         current_block -= fat_size_sector;
-        //current_block -= FAT_SECTOR_PER_CLUSTER * FAT_CLUSTER_OFFSET;
         printf("DIR\n");
         // DIR cluster
         const uint16_t dir_entries_per_sector = (512 / 32);
@@ -237,9 +238,9 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
 
                 // The size of the file
                 uint64_t file_size_left_bytes = data_size_byte - (dir_entry * rollover * FAT_SECTOR_PER_CLUSTER * 512);
-                if (file_size_left_bytes > (512 * FAT_SECTOR_PER_CLUSTER))
+                if (file_size_left_bytes > (rollover * FAT_SECTOR_PER_CLUSTER * FAT_SECTOR_SIZE))
                 {
-                    entry->DIR_FileSize = rollover * FAT_SECTOR_PER_CLUSTER * 512;
+                    entry->DIR_FileSize = rollover * FAT_SECTOR_PER_CLUSTER * FAT_SECTOR_SIZE;
                 }
                 else
                 {
