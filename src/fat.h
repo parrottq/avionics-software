@@ -94,7 +94,7 @@ extern uint32_t fat_get_total_sectors(uint64_t size);
 /**
  * Translates a sector number into the data's block number.
  * 
- * This is the main formater. When executed the formater will decide if the current sector
+ * This is the main formatter. When executed the formater will decide if the current sector
  * is part of the file system (that it itself must populate) or part of the data (that the
  * caller must populate). If the information is file system related, said information is put
  * into 'buffer' and the function returns a full uint64_t (see return). If the information
