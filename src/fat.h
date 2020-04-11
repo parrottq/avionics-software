@@ -110,4 +110,42 @@ extern uint32_t fat_get_total_sectors(uint64_t size);
  */
 extern uint64_t fat_translate_sector(uint64_t sector, uint64_t size, uint8_t *buffer);
 
+/* Internal format functions */
+
+/**
+ * Format the boot sector of a FAT32 partition
+ * 
+ * @param buffer 512 byte buffer to write the data to.
+ * @param data_size_bytes Total size in bytes of the data that the user wishes to represent.
+ * See fat_translate_sector:size
+ */
+extern void fat_format_boot(uint8_t *buffer, uint64_t data_size_byte);
+
+/**
+ * Format the FSInfo sector of a FAT32 partition
+ * 
+ * @param buffer 512 byte buffer to write the data to.
+ */
+extern void fat_format_fsinfo(uint8_t *buffer);
+
+/**
+ * Format a single FAT sector
+ * 
+ * @param buffer 512 byte buffer to write the data to.
+ * @param current_block Index of the relative FAT sector, not the absolute sector
+ * @param data_size_bytes Total size in bytes of the data that the user wishes to represent.
+ * See fat_translate_sector:size
+ */
+extern void fat_format_fat(uint8_t *buffer, uint64_t current_block, uint64_t data_size_byte);
+
+/**
+ * Format a single directory sector
+ * 
+ * @param buffer 512 byte buffer to write the data to.
+ * @param current_block Index of the relative FAT sector, not the absolute sector
+ * @param data_size_bytes Total size in bytes of the data that the user wishes to represent.
+ * See fat_translate_sector:size
+ */
+extern void fat_format_dir(uint8_t *buffer, uint64_t current_block, uint64_t data_size_byte);
+
 #endif /* fat_h */
