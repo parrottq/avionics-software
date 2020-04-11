@@ -29,11 +29,13 @@
 uint32_t fat_get_total_sectors(uint64_t size)
 {
     // TODO: Dedup this with fat_translate_sector
+    const uint64_t rollover = (((uint64_t)1) << 32) / (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER);
     uint64_t data_size_byte = size;
     uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * FAT_SECTOR_PER_CLUSTER);
     // This is a harmless change that stops warning from 'dosfsck'
     file_size_cluster += 1; // TODO: Document why this is here
-    const uint64_t dir_size_cluster = 1;
+    const uint64_t dir_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, rollover * FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER * (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER / FAT_DIR_ENTRY_SIZE));
+    //const uint64_t dir_size_cluster = 1;
     uint32_t fat_size_sector = INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, 512 / 4);
     return FAT_RESERVED_SECTORS + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (FAT_CLUSTER_OFFSET + dir_size_cluster + file_size_cluster);
 }
@@ -47,19 +49,21 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
     }
 
     // TODO: Document all these variables
+    const uint64_t rollover = (((uint64_t)1) << 32) / (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER);
     uint64_t data_size_byte = size;
     uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * FAT_SECTOR_PER_CLUSTER);
     file_size_cluster += 1; // TODO: Document why this is here
-    const uint64_t dir_size_cluster = 1;
+    const uint64_t dir_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, rollover * FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER * (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER / FAT_DIR_ENTRY_SIZE));
+    //const uint64_t dir_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, rollover * FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER);
     uint32_t fat_size_sector = INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, 512 / 4);
     // Rollover is the number of cluster per file
-    const uint64_t rollover = (((uint64_t)1) << 32) / (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER);
 
     // TODO: Too much nesting break into functions
     if (block == 0)
     {
         printf("Boot block\n");
-        printf("%li\n", rollover);
+        printf("rollover %li\n", rollover);
+        printf("dir %li\n", dir_size_cluster);
         /* Boot sector */
 
         struct fat_boot_sector_head *sector = (struct fat_boot_sector_head *)buffer;
@@ -163,7 +167,15 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
             {
                 printf("\tDIR entry\n");
                 // Directory entry
-                *entry = 0x0fffffff;
+                uint64_t fat_dir_entry = fat_entry - FAT_CLUSTER_OFFSET;
+                if (fat_dir_entry == (dir_size_cluster - 1))
+                {
+                    *entry = 0x0fffffff;
+                }
+                else
+                {
+                    *entry = fat_entry + 1;
+                }
             }
             else
             {
@@ -202,6 +214,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         current_block -= fat_size_sector;
         printf("DIR\n");
         // DIR cluster
+        // TODO: Replace with constant
         const uint16_t dir_entries_per_sector = (512 / 32);
         uint32_t dir_entry = dir_entries_per_sector * current_block;
         for (uint16_t dir_entry_offset = 0; dir_entry_offset < 512; dir_entry_offset += sizeof(struct fat_directory))
