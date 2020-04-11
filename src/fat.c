@@ -53,12 +53,13 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
     const uint64_t dir_size_cluster = 1;
     uint32_t fat_size_sector = INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, 512 / 4);
     // Rollover is the number of cluster per file
-    const uint64_t rollover = 3;
+    const uint64_t rollover = (((uint64_t)1) << 32) / (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER);
 
     // TODO: Too much nesting break into functions
     if (block == 0)
     {
         printf("Boot block\n");
+        printf("%li\n", rollover);
         /* Boot sector */
 
         struct fat_boot_sector_head *sector = (struct fat_boot_sector_head *)buffer;
