@@ -26,17 +26,30 @@
 // The brackets around each variable are necessary so inline math works correctly
 #define INTEGER_DIVISION_ROUND_UP(dividend, divisor) (((dividend) / (divisor)) + (((dividend) % (divisor)) > 0))
 
-uint32_t fat_get_total_sectors(uint64_t size)
+// Rollover is the number of cluster per file
+static const uint64_t rollover = (((uint64_t)1) << 32) / (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER);
+
+static uint64_t fat_calc_file_size_cluster(uint64_t data_size_byte)
 {
-    // TODO: Dedup this with fat_translate_sector
-    const uint64_t rollover = (((uint64_t)1) << 32) / (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER);
-    uint64_t data_size_byte = size;
-    uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * FAT_SECTOR_PER_CLUSTER);
-    // This is a harmless change that stops warning from 'dosfsck'
-    file_size_cluster += 1; // TODO: Document why this is here
-    const uint64_t dir_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, rollover * FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER * (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER / FAT_DIR_ENTRY_SIZE));
-    //const uint64_t dir_size_cluster = 1;
-    uint32_t fat_size_sector = INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, 512 / 4);
+    // '+ 1' is a harmless change that stops warning from 'dosfsck'
+    return INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * FAT_SECTOR_PER_CLUSTER) + 1;
+}
+
+static uint64_t fat_calc_dir_size_cluster(uint64_t data_size_byte)
+{
+    return INTEGER_DIVISION_ROUND_UP(data_size_byte, rollover * FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER * (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER / FAT_DIR_ENTRY_SIZE));
+}
+
+static uint32_t fat_calc_fat_size_sector(uint64_t file_size_cluster, uint64_t dir_size_cluster)
+{
+    return INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, FAT_SECTOR_SIZE / sizeof(uint32_t));
+}
+
+uint32_t fat_get_total_sectors(uint64_t data_size_byte)
+{
+    uint64_t file_size_cluster = fat_calc_file_size_cluster(data_size_byte);
+    uint64_t dir_size_cluster = fat_calc_dir_size_cluster(data_size_byte);
+    uint32_t fat_size_sector = fat_calc_fat_size_sector(file_size_cluster, dir_size_cluster);
     return FAT_RESERVED_SECTORS + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (FAT_CLUSTER_OFFSET + dir_size_cluster + file_size_cluster);
 }
 
@@ -48,15 +61,10 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         buffer[i] = 0;
     }
 
-    // TODO: Document all these variables
-    const uint64_t rollover = (((uint64_t)1) << 32) / (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER);
     uint64_t data_size_byte = size;
-    uint64_t file_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, 512 * FAT_SECTOR_PER_CLUSTER);
-    file_size_cluster += 1; // TODO: Document why this is here
-    const uint64_t dir_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, rollover * FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER * (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER / FAT_DIR_ENTRY_SIZE));
-    //const uint64_t dir_size_cluster = INTEGER_DIVISION_ROUND_UP(data_size_byte, rollover * FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER);
-    uint32_t fat_size_sector = INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, 512 / 4);
-    // Rollover is the number of cluster per file
+    uint64_t file_size_cluster = fat_calc_file_size_cluster(size);
+    uint64_t dir_size_cluster = fat_calc_dir_size_cluster(size);
+    uint32_t fat_size_sector = fat_calc_fat_size_sector(file_size_cluster, dir_size_cluster);
 
     // TODO: Too much nesting break into functions
     if (block == 0)
