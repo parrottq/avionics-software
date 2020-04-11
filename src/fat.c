@@ -12,16 +12,6 @@
 #include <string.h>
 #include <stdio.h>
 
-// TODO: Some of these constants should be in fat-standard.h
-/* Boot (1) + FSInfo (1) */
-#define FAT_RESERVED_SECTORS 2
-#define FAT_CLUSTER_OFFSET 2
-#define FAT_DIR_ENTRY_SIZE 32
-#define FAT_ENTRY_SIZE sizeof(uint32_t)
-
-#define FAT_SECTOR_SIZE 512
-#define FAT_SECTOR_PER_CLUSTER 4
-
 // The brackets around each variable are necessary so inline math works correctly
 #define INTEGER_DIVISION_ROUND_UP(dividend, divisor) (((dividend) / (divisor)) + (((dividend) % (divisor)) > 0))
 
