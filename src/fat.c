@@ -17,12 +17,10 @@
 // TODO: Offset might need to be changed to align with clusters
 #define FAT_RESERVED_SECTORS 2
 #define FAT_CLUSTER_OFFSET 2
-#define FAT_RESERVED_OFFSET (FAT_SECTOR_PER_CLUSTER * FAT_CLUSTER_OFFSET + FAT_RESERVED_SECTORS)
 
 #define FAT_SECTOR_SIZE 512
 #define FAT_DIR_ENTRY_SIZE 32
 #define FAT_CLUSTER_ENTRY_SIZE 4
-//#define FAT_SECTOR_PER_CLUSTER 128
 #define FAT_SECTOR_PER_CLUSTER 1
 
 // The brackets around each variable are necessary so inline math works correctly
@@ -37,7 +35,7 @@ uint32_t fat_get_total_sectors(uint64_t size)
     file_size_cluster += 1; // TODO: Document why this is here
     const uint64_t dir_size_cluster = 1;
     uint32_t fat_size_sector = INTEGER_DIVISION_ROUND_UP(dir_size_cluster + file_size_cluster, 512 / 4);
-    return FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (FAT_CLUSTER_OFFSET + dir_size_cluster + file_size_cluster);
+    return FAT_RESERVED_SECTORS + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (FAT_CLUSTER_OFFSET + dir_size_cluster + file_size_cluster);
 }
 
 uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
@@ -72,7 +70,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
 
         sector->BPB_BytsPerSec = FAT_SECTOR_SIZE;
         sector->BPB_SecPerClus = FAT_SECTOR_PER_CLUSTER;
-        sector->BPB_RsvdSecCnt = FAT_RESERVED_OFFSET;
+        sector->BPB_RsvdSecCnt = FAT_RESERVED_SECTORS;
         // TODO: No second fat
         sector->BPB_NumFATs = 1;
         sector->BPB_RootEntCnt = 0;
@@ -83,7 +81,7 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         sector->BPB_SecPerTrk = 32;
         sector->BPB_NumHeads = 64;
         sector->BPB_HiddSec = 0;
-        uint32_t total_sectors = FAT_RESERVED_OFFSET + fat_size_sector + (FAT_SECTOR_PER_CLUSTER * file_size_cluster);
+        uint32_t total_sectors = FAT_RESERVED_SECTORS + fat_size_sector + (FAT_SECTOR_PER_CLUSTER * file_size_cluster);
         sector->BPB_TotSec32 = total_sectors;
 
         sector->BPB_FATSz32 = fat_size_sector;
@@ -128,15 +126,15 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
         sector->FSI_Free_Count = 0xffffffff;
         sector->FSI_Nxt_Free = 0xffffffff;
     }
-    else if (block < FAT_RESERVED_OFFSET)
+    else if (block < FAT_RESERVED_SECTORS)
     {
         printf("Reserved sector\n");
     }
-    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector))
+    else if (block < (FAT_RESERVED_SECTORS + fat_size_sector))
     {
         // FAT sectors
         uint64_t current_block = block;
-        current_block -= FAT_RESERVED_OFFSET;
+        current_block -= FAT_RESERVED_SECTORS;
         // TODO: Change order so files is first checked
         printf("FAT\n");
 
@@ -195,11 +193,11 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
 
         // TODO: Move 128 constants somewhere
     }
-    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * dir_size_cluster))
+    else if (block < (FAT_RESERVED_SECTORS + fat_size_sector + FAT_SECTOR_PER_CLUSTER * dir_size_cluster))
     {
         // DIR clusters
         uint64_t current_block = block;
-        current_block -= FAT_RESERVED_OFFSET;
+        current_block -= FAT_RESERVED_SECTORS;
         current_block -= fat_size_sector;
         printf("DIR\n");
         // DIR cluster
@@ -253,12 +251,12 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t *buffer)
             dir_entry++;
         }
     }
-    else if (block < (FAT_RESERVED_OFFSET + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (dir_size_cluster + file_size_cluster)))
+    else if (block < (FAT_RESERVED_SECTORS + fat_size_sector + FAT_SECTOR_PER_CLUSTER * (dir_size_cluster + file_size_cluster)))
     {
         printf("File\n");
         // File clusters
         uint64_t current_block = block;
-        current_block -= FAT_RESERVED_OFFSET;
+        current_block -= FAT_RESERVED_SECTORS;
         current_block -= fat_size_sector;
         current_block -= FAT_SECTOR_PER_CLUSTER * dir_size_cluster;
         return current_block;
