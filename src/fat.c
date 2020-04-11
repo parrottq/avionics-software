@@ -61,7 +61,6 @@ void fat_format_boot(uint8_t *buffer, uint64_t data_size_byte)
     sector->BPB_BytsPerSec = FAT_SECTOR_SIZE;
     sector->BPB_SecPerClus = FAT_SECTOR_PER_CLUSTER;
     sector->BPB_RsvdSecCnt = FAT_RESERVED_SECTORS;
-    // TODO: No second fat
     sector->BPB_NumFATs = 1;
     sector->BPB_RootEntCnt = 0;
     sector->BPB_TotSec16 = 0;
@@ -196,6 +195,7 @@ void fat_format_dir(uint8_t *buffer, uint64_t current_block, uint64_t data_size_
 
     uint64_t dir_size_cluster = fat_calc_dir_size_cluster(data_size_byte);
 
+    // TODO: The internal if statement is completely unecessary
     const uint16_t dir_entries_per_sector = (FAT_SECTOR_SIZE / FAT_DIR_ENTRY_SIZE);
     uint32_t dir_entry = dir_entries_per_sector * current_block;
     for (uint16_t dir_entry_offset = 0; dir_entry_offset < FAT_SECTOR_SIZE; dir_entry_offset += sizeof(struct fat_directory))
