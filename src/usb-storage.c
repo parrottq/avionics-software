@@ -12,11 +12,15 @@
 #include "global.h"
 #include <string.h>
 
+#include <string.h>
+
 #include "usb.h"
 #include "usb-address.h"
 
 #include "usb-standard.h"
 #include "usb-storage-standard.h"
+
+#include "fat.h"
 
 #define CLAMP_MAX(value, max_value) (value > max_value ? max_value : value)
 
@@ -39,6 +43,8 @@ static void process_command(struct usb_storage_state *state);
 static uint8_t usb_status_success_callback(struct usb_storage_state *state);
 static uint8_t usb_status_failed_callback(struct usb_storage_state *state);
 static uint8_t usb_status_callback(struct usb_storage_state *state, uint8_t status);
+
+static const uint64_t size_of_partition = 14336000;
 
 /* SCSI command callbacks */
 static uint8_t scsi_read_10_callback(struct usb_storage_state *state);
@@ -315,6 +321,10 @@ uint8_t usb_storage_scsi_host_handler(struct usb_storage_state *state)
     case SCSI_OPCODE_READ_10:
         state->next_callback = scsi_read_10_callback;
         break;
+    case SCSI_OPCODE_WRITE_10:
+        // TODO: Needs to work
+        //scsi_command_callback = usb_status_success_callback;
+        break;
     case SCSI_OPCODE_READ_16:
         // Not implemented
         return 1;
@@ -443,7 +453,8 @@ static uint8_t scsi_read_capacity_callback(struct usb_storage_state *state)
 {
     struct scsi_read_capacity_10_reply *read_capacity_reply = (struct scsi_read_capacity_10_reply *)state->send_buffer;
     /* These need to be big endian hence __REV */
-    read_capacity_reply->logicalBlockAddress = __REV(100);
+    uint64_t fat_size = fat_get_total_sectors(size_of_partition);
+    read_capacity_reply->logicalBlockAddress = __REV(fat_size);
     read_capacity_reply->blockLength = __REV(USB_STORAGE_BLOCK_SIZE);
 
     state->usb_packet_length = sizeof(struct scsi_read_capacity_10_reply);
