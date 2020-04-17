@@ -10,7 +10,6 @@
 #include "fat.h"
 
 #include <string.h>
-#include <stdio.h>
 
 // The brackets around each variable are necessary so inline math works correctly
 #define INTEGER_DIVISION_ROUND_UP(dividend, divisor) (((dividend) / (divisor)) + (((dividend) % (divisor)) > 0))
@@ -45,8 +44,6 @@ uint32_t fat_get_total_sectors(uint64_t data_size_byte)
 void fat_format_boot(uint8_t buffer[], uint64_t data_size_byte)
 {
     /* Boot sector */
-    printf("Boot block\n");
-
     uint64_t file_size_cluster = fat_calc_file_size_cluster(data_size_byte);
     uint64_t dir_size_cluster = fat_calc_dir_size_cluster(data_size_byte);
     uint32_t fat_size_sector = fat_calc_fat_size_sector(file_size_cluster, dir_size_cluster);
@@ -102,8 +99,6 @@ void fat_format_boot(uint8_t buffer[], uint64_t data_size_byte)
 void fat_format_fsinfo(uint8_t buffer[])
 {
     /* FSinfo */
-    printf("FSInfo\n");
-
     buffer[0] = 0x52;
     buffer[1] = 0x52;
     buffer[2] = 0x61;
@@ -126,8 +121,6 @@ void fat_format_fsinfo(uint8_t buffer[])
 void fat_format_fat(uint8_t buffer[], uint64_t current_block, uint64_t data_size_byte)
 {
     /* FAT sectors */
-    printf("FAT\n");
-
     uint64_t file_size_cluster = fat_calc_file_size_cluster(data_size_byte);
     uint64_t dir_size_cluster = fat_calc_dir_size_cluster(data_size_byte);
 
@@ -139,8 +132,6 @@ void fat_format_fat(uint8_t buffer[], uint64_t current_block, uint64_t data_size
 
         if (fat_entry < FAT_CLUSTER_OFFSET)
         {
-            printf("\tRes cluster: ");
-
             // First 2 entries are reserved
             if (fat_entry == 0)
             {
@@ -153,7 +144,6 @@ void fat_format_fat(uint8_t buffer[], uint64_t current_block, uint64_t data_size
         }
         else if (fat_entry < (FAT_CLUSTER_OFFSET + dir_size_cluster))
         {
-            printf("\tDIR entry\n");
             // Directory entry
             uint64_t fat_dir_entry = fat_entry - FAT_CLUSTER_OFFSET;
             if (fat_dir_entry == (dir_size_cluster - 1))
@@ -167,10 +157,8 @@ void fat_format_fat(uint8_t buffer[], uint64_t current_block, uint64_t data_size
         }
         else
         {
-            printf("\tFile entry: ");
             // File entry
             uint64_t fat_file_entry = fat_entry - (dir_size_cluster + FAT_CLUSTER_OFFSET);
-            printf("%llu\n", fat_file_entry);
             if (fat_file_entry >= file_size_cluster)
             {
                 // Outside the data bound, mark unallocated
@@ -215,8 +203,6 @@ inline static void format_dir_name(uint32_t entry, struct fat_directory *dir)
 void fat_format_dir(uint8_t buffer[], uint64_t current_block, uint64_t data_size_byte)
 {
     /* DIR clusters */
-    printf("DIR\n");
-
     uint64_t dir_size_cluster = fat_calc_dir_size_cluster(data_size_byte);
 
     const uint16_t dir_entries_per_sector = (FAT_SECTOR_SIZE / FAT_DIR_ENTRY_SIZE);
@@ -255,12 +241,10 @@ void fat_format_dir(uint8_t buffer[], uint64_t current_block, uint64_t data_size
             {
                 entry->DIR_FileSize = file_size_left_bytes;
             }
-            printf("\tStart cluster: %lu file_size_left_bytes: %llu size: %lu\n", start_cluster, file_size_left_bytes, entry->DIR_FileSize);
         }
         else
         {
             memset(entry, 0, sizeof(struct fat_directory));
-            printf("Empty dir entry\n");
         }
         // Next dir entry, keep in sync with loop
         dir_entry++;
@@ -293,7 +277,6 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t buffer[])
     else if (block < FAT_RESERVED_SECTORS)
     {
         // If there are any other reserved sectors, they will be empty
-        printf("Reserved sector\n");
     }
     else if (block < offset_fat)
     {
@@ -312,8 +295,6 @@ uint64_t fat_translate_sector(uint64_t block, uint64_t size, uint8_t buffer[])
     else if (block < offset_file)
     {
         /*File clusters */
-        printf("File\n");
-
         uint64_t current_block = block;
         current_block -= offset_dir;
         // Return the relative block of this sector

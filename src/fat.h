@@ -62,8 +62,6 @@ File cluster:
 The contents of the files as allocated in the FAT much like the directory cluster.
 */
 
-#include <stdint.h>
-
 #include "fat-standard.h"
 
 /**
@@ -77,7 +75,6 @@ The contents of the files as allocated in the FAT much like the directory cluste
  * to any power of two between 1 <= x <= 128.
  */
 #define FAT_SECTOR_PER_CLUSTER 4
-
 
 /**
  * Calculate the number of sectors that are needed to represent a number
