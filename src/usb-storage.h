@@ -16,6 +16,54 @@
 
 #define USB_STORAGE_MAX_OUT_BUFFER USB_ENDPOINT_SIZE_32
 #define USB_STORAGE_MAX_IN_BUFFER USB_ENDPOINT_SIZE_64
+
+enum usb_storage_mode_type
+{
+    /* Send data from storage_data_buffer but does not terminate it */
+    SEND_CONTINUE,
+    /* Send data from storage_data_buffer and terminate it */
+    SEND_DONE,
+    /* Receive data to storage_data_buffer */
+    RECEIVE,
+    /* Receive data to storage_command_buffer */
+    NEXT_COMMAND,
+};
+
+struct usb_storage_state
+{
+    /* The function to call once the data transfer is done */
+    uint8_t (*next_callback)(struct usb_storage_state *);
+
+    /* Amount of residue */
+    uint16_t residual_bytes;
+
+    /* What buffer was filled */
+    enum usb_storage_mode_type mode;
+
+    /* The buffer data is received and sent in */
+    uint8_t * const send_buffer;
+
+    struct usb_storage_command_block_wrapper * const received_usb_command;
+
+    union scsi_command_descriptor_block * const received_scsi_command;
+
+    /* Length of the current partial packet */
+    uint16_t usb_packet_length;
+};
+
+// TODO: Can this nesting be done better
+struct usb_storage_persistent_state
+{
+    /* The function to call once the data transfer is done */
+    uint8_t (*next_callback)(struct usb_storage_state *);
+
+    /* Amount of residue */
+    uint16_t residual_bytes;
+
+    /* What buffer was filled */
+    enum usb_storage_mode_type mode;
+};
+
 /**
  *  Callback to handle class specific requests.
  *
@@ -48,6 +96,6 @@ extern void usb_storage_disable_config_callback(void);
  *
  * @return 0 if successful, non-zero otherwise
  */
-extern uint8_t usb_storage_scsi_host_handler(uint8_t *cdb_buffer, uint8_t cdb_size);
+extern uint8_t usb_storage_scsi_host_handler(struct usb_storage_state *state);
 
 #endif /* usb_storage_h */

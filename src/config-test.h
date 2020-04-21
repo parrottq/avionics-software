@@ -146,6 +146,8 @@ extern struct sercom_uart_desc_t uart3_g;
 // TODO: Add to each config file
 /* Define to enable USB mass storage */
 #define ENABLE_USB_STORAGE
+/* Number of 512-byte blocks usb by usb storage */
+#define USB_STORAGE_BLOCK_COUNT 2
 
 //
 //

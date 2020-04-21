@@ -113,7 +113,7 @@ struct usb_storage_command_status_wrapper
  * Section 2.1.2 for Command Descriptor Block
  * @see https://www.seagate.com/files/staticfiles/support/docs/manual/Interface%20manuals/100293068j.pdf
  */
-struct usb_storage_command_descriptor_block_6
+struct scsi_command_descriptor_block_6
 {
     /* Opcode */
     uint8_t opcode;
@@ -125,7 +125,7 @@ struct usb_storage_command_descriptor_block_6
     uint8_t length;
     /* Controls a variety of options */
     uint8_t control;
-} __attribute__((packed));
+} __attribute__((packed)) scsi_command_descriptor_block_6;
 
 /**
  * SCSI Command Descriptor Blocks (10 bytes)
@@ -133,7 +133,7 @@ struct usb_storage_command_descriptor_block_6
  * Section 2.1.2 for Command Descriptor Block
  * @see https://www.seagate.com/files/staticfiles/support/docs/manual/Interface%20manuals/100293068j.pdf
  */
-struct usb_storage_command_descriptor_block_10
+struct scsi_command_descriptor_block_10
 {
     /* Opcode */
     uint8_t opcode;
@@ -147,7 +147,7 @@ struct usb_storage_command_descriptor_block_10
     uint16_t length;
     /* Controls a variety of options */
     uint8_t control;
-} __attribute__((packed));
+} __attribute__((packed)) scsi_command_descriptor_block_10;
 
 /**
  * SCSI Command Descriptor Blocks (12 bytes)
@@ -155,7 +155,7 @@ struct usb_storage_command_descriptor_block_10
  * Section 2.1.2 for Command Descriptor Block
  * @see https://www.seagate.com/files/staticfiles/support/docs/manual/Interface%20manuals/100293068j.pdf
  */
-struct usb_storage_command_descriptor_block_12
+struct scsi_command_descriptor_block_12
 {
     /* Opcode */
     uint8_t opcode;
@@ -169,7 +169,7 @@ struct usb_storage_command_descriptor_block_12
     uint8_t options2;
     /* Controls a variety of options */
     uint8_t control;
-} __attribute__((packed));
+} __attribute__((packed)) scsi_command_descriptor_block_12;
 
 /**
  * SCSI Command Descriptor Blocks (16 bytes)
@@ -177,7 +177,7 @@ struct usb_storage_command_descriptor_block_12
  * Section 2.1.2 for Command Descriptor Block
  * @see https://www.seagate.com/files/staticfiles/support/docs/manual/Interface%20manuals/100293068j.pdf
  */
-struct usb_storage_command_descriptor_block_16
+struct scsi_command_descriptor_block_16
 {
     /* Opcode */
     uint8_t opcode;
@@ -191,7 +191,18 @@ struct usb_storage_command_descriptor_block_16
     uint8_t options2;
     /* Controls a variety of options */
     uint8_t control;
-} __attribute__((packed));
+} __attribute__((packed)) scsi_command_descriptor_block_16;
+
+/**
+ * SCSI Command Descriptor Block with all sizes accessible through a union
+ */
+union scsi_command_descriptor_block
+{
+    struct scsi_command_descriptor_block_6 _6;
+    struct scsi_command_descriptor_block_10 _10;
+    struct scsi_command_descriptor_block_12 _12;
+    struct scsi_command_descriptor_block_16 _16;
+} __attribute__((packed)) scsi_command_descriptor_block;
 
 /**
  * SCSI Read Capacity reply
