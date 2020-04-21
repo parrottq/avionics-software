@@ -20,37 +20,34 @@
 
 #define CLAMP_MAX(value, max_value) (value > max_value ? max_value : value)
 
-/* Endpoint buffer from host (received) */
-static uint8_t out_buffer[USB_STORAGE_MAX_OUT_BUFFER];
+/* Persistent storage for commands from host */
+static struct usb_storage_command_block_wrapper storage_usb_command;
+static union scsi_command_descriptor_block storage_scsi_command;
 
-/* Endpoint buffer to host (sending) */
-static uint8_t in_buffer[USB_STORAGE_BLOCK_SIZE];
+/* Persistent information across usb transactions */
+static struct usb_storage_persistent_state stored_state = {.mode = NEXT_COMMAND};
 
-/* USB Mass Storage packet header */
-static struct usb_storage_command_block_wrapper *received_command_wrapper;
+/* Buffer endpoints read from and write to */
+static uint8_t storage_data_buffer[USB_STORAGE_BLOCK_SIZE * USB_STORAGE_BLOCK_COUNT];
 
-/* SCSI Command Descriptor Block request from host */
-static struct usb_storage_command_descriptor_block_16 *received_scsi_command;
+/* Packet processing */
+static void data_sent_complete(void);
+static void data_received_complete(uint16_t length);
+static void process_command(struct usb_storage_state *state);
 
-/* SCSI command callback */
-static uint8_t (*scsi_command_callback)(uint16_t *, bool *);
-
-/* Amount of residue */
-static uint16_t residual_bytes;
+/* USB status command callbacks */
+static uint8_t usb_status_success_callback(struct usb_storage_state *state);
+static uint8_t usb_status_failed_callback(struct usb_storage_state *state);
+static uint8_t usb_status_callback(struct usb_storage_state *state, uint8_t status);
 
 /* SCSI command callbacks */
-static uint8_t scsi_read_capacity_callback(uint16_t *packet_length, bool *continuation);
-static uint8_t scsi_inquiry_callback(uint16_t *packet_length, bool *continuation);
-static uint8_t usb_status_callback(uint16_t *packet_length, bool *continuation, uint8_t status);
-static uint8_t usb_status_success_callback(uint16_t *packet_length, bool *continuation);
-static uint8_t usb_status_failed_callback(uint16_t *packet_length, bool *continuation);
-static uint8_t scsi_mode_sense_callback(uint16_t *packet_length, bool *continuation);
-static uint8_t scsi_read_10_callback(uint16_t *packet_length, bool *continuation);
+static uint8_t scsi_read_10_callback(struct usb_storage_state *state);
+static uint8_t scsi_inquiry_callback(struct usb_storage_state *state);
+static uint8_t scsi_read_capacity_callback(struct usb_storage_state *state);
+static uint8_t scsi_mode_sense_callback(struct usb_storage_state *state);
 
 /* Other headers */
-static void data_out_complete(uint16_t length);
-static void data_in_complete(void);
-static uint8_t scsi_load_into_received(struct usb_storage_command_descriptor_block_16 *scsi_command, uint8_t cdb_size);
+static void scsi_swap_command_endianess(struct usb_storage_state *state);
 
 uint8_t usb_storage_class_request_callback(struct usb_setup_packet *packet,
                                            uint16_t *response_length,
@@ -74,82 +71,22 @@ uint8_t usb_storage_class_request_callback(struct usb_setup_packet *packet,
     return 0;
 }
 
-static void data_out_complete(uint16_t length)
-{
-    /* USB Mass Storage level command wrapper */
-    received_command_wrapper = (struct usb_storage_command_block_wrapper *)&out_buffer;
-
-    /* If signature does not match or scsi parsing fails -> status failed */
-    if (received_command_wrapper->signature != USB_STORAGE_SIGNATURE ||
-        usb_storage_scsi_host_handler(
-            (uint8_t *)out_buffer + sizeof(struct usb_storage_command_block_wrapper),
-            received_command_wrapper->SCSILength) != 0)
-    {
-        /* SCSI handling failed */
-        scsi_command_callback = usb_status_failed_callback;
-    }
-
-    /* Reset the number of proccesed */
-    residual_bytes = 0;
-
-    /* Start handling transaction */
-    data_in_complete();
-}
-
-static void data_in_complete(void)
-{
-    /* Status command has been sent, wait for next transaction */
-    if (scsi_command_callback == 0)
-    {
-        usb_start_out(USB_ENDPOINT_OUT_STORAGE,
-                      out_buffer,
-                      USB_STORAGE_MAX_OUT_BUFFER);
-        return;
-    }
-
-    /* Length of the current partial packet */
-    uint16_t usb_packet_length = 0;
-    /* Indicates if the data being sent is a continuation of the last packet */
-    bool continuation = false;
-    if (scsi_command_callback(&usb_packet_length, &continuation) != 0)
-    {
-        /* Error, status failed callback will finish the transaction */
-        scsi_command_callback = usb_status_failed_callback;
-        // usb status callbacks never fail so no infinite recursion is not possible
-        data_in_complete();
-    }
-    else
-    {
-        /* If zero it's a status packet which does not need to be clamped */
-        if (received_command_wrapper->dataTransferLength > 0)
-        {
-            /* Clamp packet length to the requested data length */
-            usb_packet_length = CLAMP_MAX(usb_packet_length, received_command_wrapper->dataTransferLength);
-
-            /* Substact from total requested length left */
-            received_command_wrapper->dataTransferLength -= usb_packet_length;
-        }
-
-        usb_start_in(USB_ENDPOINT_IN_STORAGE, in_buffer, usb_packet_length, !continuation);
-    }
-}
-
 void usb_storage_enable_config_callback(void)
 {
     /* Enable in and out bulk endpoints for USB Mass Storage */
     usb_enable_endpoint_out(USB_ENDPOINT_OUT_STORAGE,
                             USB_STORAGE_MAX_OUT_BUFFER,
                             USB_ENDPOINT_TYPE_BULK,
-                            &data_out_complete);
+                            &data_received_complete);
 
     usb_enable_endpoint_in(USB_ENDPOINT_IN_STORAGE,
                            USB_STORAGE_MAX_IN_BUFFER,
                            USB_ENDPOINT_TYPE_BULK,
-                           &data_in_complete);
+                           &data_sent_complete);
 
     /* Start the first endpoint transaction */
     usb_start_out(USB_ENDPOINT_OUT_STORAGE,
-                  out_buffer,
+                  storage_data_buffer,
                   USB_STORAGE_MAX_OUT_BUFFER);
 }
 
@@ -159,84 +96,224 @@ void usb_storage_disable_config_callback(void)
     usb_disable_endpoint_in(USB_ENDPOINT_IN_STORAGE);
 }
 
-static uint8_t scsi_load_into_received(struct usb_storage_command_descriptor_block_16 *scsi_command, uint8_t cdb_size)
+static void data_sent_complete(void)
 {
-    /* Point received to buffer */
-    received_scsi_command = scsi_command;
-    /**
-     * Instead of checking for each size variant of a command, cast to the biggest
-     * since the bigger variant's memory is already allocated.
-     *
-     * Note: Since the same buffer is used, this overides the original command
-     * structure. Values are assigned in reverse chronological order to not
-     * overide unprocessed data.
-     */
-    // TODO: I think some of these don't properly recast to different sized ints
-    switch (cdb_size)
+    data_received_complete(0);
+}
+
+static void data_received_complete(uint16_t length)
+{
+    struct usb_storage_state state = {
+        /* Copy values from presistent state */
+        .next_callback = stored_state.next_callback,
+        .residual_bytes = stored_state.residual_bytes,
+        .mode = stored_state.mode,
+
+        /* Point to storage buffer */
+        .send_buffer = storage_data_buffer,
+
+        /* Point to USB and SCSI command blocks */
+        .received_usb_command = &storage_usb_command,
+        .received_scsi_command = &storage_scsi_command,
+    };
+
+    /* Check if triggered by send or received */
+    if (length > 0)
     {
-    case 6:; // semi-colon intentional, quirk in C
-        struct usb_storage_command_descriptor_block_6 *cdb6 = (struct usb_storage_command_descriptor_block_6 *)scsi_command;
-        received_scsi_command->control = cdb6->control;
-        received_scsi_command->options2 = 0;
-        received_scsi_command->length = cdb6->length;
-        /* __REV changes endianess */
-        received_scsi_command->logicalBlockAddress = __REV(cdb6->logicalBlockAddress);
-        received_scsi_command->options = cdb6->options;
-        received_scsi_command->opcode = cdb6->opcode;
-        break;
-    case 10:;
-        struct usb_storage_command_descriptor_block_10 *cdb10 = (struct usb_storage_command_descriptor_block_10 *)scsi_command;
-        received_scsi_command->control = cdb10->control;
-        received_scsi_command->options2 = cdb10->options2;
-        received_scsi_command->length = __REV16(cdb10->length);
-        received_scsi_command->logicalBlockAddress = __REV(cdb10->logicalBlockAddress);
-        received_scsi_command->options = cdb10->options;
-        received_scsi_command->opcode = cdb10->opcode;
-        break;
-    case 12:;
-        struct usb_storage_command_descriptor_block_12 *cdb12 = (struct usb_storage_command_descriptor_block_12 *)scsi_command;
-        received_scsi_command->control = cdb12->control;
-        received_scsi_command->options2 = cdb12->options2;
-        received_scsi_command->length = __REV(cdb12->length);
-        received_scsi_command->logicalBlockAddress = __REV(cdb12->logicalBlockAddress);
-        received_scsi_command->options = cdb12->options;
-        received_scsi_command->opcode = cdb12->opcode;
-        break;
-    case 16:
-        received_scsi_command = (struct usb_storage_command_descriptor_block_16 *)scsi_command;
-        break;
-    default:
-        return 1;
+        /* Is this a new command, or incoming data */
+        if (state.mode != RECEIVE)
+        {
+            /* SCSI command was received. This block needs to be the default state */
+
+            /* Move command data into persistent command storage */
+            memcpy(
+                state.received_usb_command,
+                state.send_buffer,
+                sizeof(struct usb_storage_command_block_wrapper));
+            memcpy(
+                state.received_scsi_command,
+                state.send_buffer + sizeof(struct usb_storage_command_block_wrapper),
+                sizeof(union scsi_command_descriptor_block));
+
+            /* SCSI is big endian, change to little endian */
+            scsi_swap_command_endianess(&state);
+
+            /* If signature does not match or scsi parsing fails -> status failed */
+            if (state.received_usb_command->signature != USB_STORAGE_SIGNATURE ||
+                usb_storage_scsi_host_handler(&state) != 0)
+            {
+                /* SCSI handling failed */
+                state.next_callback = usb_status_failed_callback;
+            }
+
+            /* Reset the number of proccesed */
+            state.residual_bytes = 0;
+        }
     }
+
+    /* Handle the command */
+    process_command(&state);
+
+    stored_state.next_callback = state.next_callback;
+    stored_state.residual_bytes = state.residual_bytes;
+    stored_state.mode = state.mode;
+}
+
+static void process_command(struct usb_storage_state *state)
+{
+    state->usb_packet_length = 0;
+
+    /* Indicates if the data being sent is a continuation of the last packet */
+    if (state->next_callback(state) != 0)
+    {
+        /* Error, status failed callback will finish the transaction */
+        state->next_callback = usb_status_failed_callback;
+        usb_status_failed_callback(state);
+        return;
+    }
+
+    /* If zero it's a status packet which does not need to be clamped or accounted for */
+    if (state->received_usb_command->dataTransferLength > 0)
+    {
+        /* Clamp packet length to the requested data length */
+        state->usb_packet_length = CLAMP_MAX(state->usb_packet_length, state->received_usb_command->dataTransferLength);
+
+        /* Substact from total requested length left */
+        state->received_usb_command->dataTransferLength -= state->usb_packet_length;
+    }
+
+    switch (state->mode)
+    {
+    case SEND_CONTINUE:
+        usb_start_in(USB_ENDPOINT_IN_STORAGE, state->send_buffer, state->usb_packet_length, 0);
+        break;
+    case SEND_DONE:
+        usb_start_in(USB_ENDPOINT_IN_STORAGE, state->send_buffer, state->usb_packet_length, 1);
+        break;
+    case RECEIVE:
+        usb_start_out(USB_ENDPOINT_OUT_STORAGE, state->send_buffer, USB_STORAGE_MAX_OUT_BUFFER);
+        break;
+    case NEXT_COMMAND:
+        // TODO: Dedup with RECEIVE
+        usb_start_out(USB_ENDPOINT_OUT_STORAGE, state->send_buffer, USB_STORAGE_MAX_OUT_BUFFER);
+        break;
+    }
+}
+
+static uint8_t usb_receive_next_command_callback(struct usb_storage_state *state)
+{
+    state->mode = NEXT_COMMAND;
     return 0;
 }
 
-uint8_t usb_storage_scsi_host_handler(uint8_t *cdb_buffer, uint8_t cdb_size)
+static uint8_t usb_status_failed_callback(struct usb_storage_state *state)
 {
-    /* Recast any sized command descriptor block into biggest for easier handling */
-    if (scsi_load_into_received((struct usb_storage_command_descriptor_block_16 *)cdb_buffer, cdb_size) != 0)
+    return usb_status_callback(state, 1);
+}
+
+static uint8_t usb_status_success_callback(struct usb_storage_state *state)
+{
+    return usb_status_callback(state, 0);
+}
+
+static uint8_t usb_status_callback(struct usb_storage_state *state, uint8_t status)
+{
+    /* Clamp padding to not exceed buffer length */
+    uint16_t padding_length = CLAMP_MAX(state->received_usb_command->dataTransferLength, USB_STORAGE_BLOCK_SIZE * USB_STORAGE_BLOCK_COUNT);
+
+    /* Check if there is still padding left */
+    if (state->received_usb_command->dataTransferLength > 0)
     {
-        return 1;
+        /* Clear buffer */
+        memset(state->send_buffer, 0, padding_length);
+
+        /* Added to residual byte count */
+        state->residual_bytes += padding_length;
+
+        /* Length of the padding to send */
+        state->usb_packet_length = padding_length;
+
+        /* No data is left, terminate packet */
+        if (state->received_usb_command->dataTransferLength > 0)
+        {
+            state->mode = SEND_CONTINUE;
+        }
+        else
+        {
+            state->mode = SEND_DONE;
+        }
+    }
+    else
+    {
+        /* No padding left, send status */
+        struct usb_storage_command_status_wrapper *status_wrapper = (struct usb_storage_command_status_wrapper *)state->send_buffer;
+        status_wrapper->signature = USB_STORAGE_SIGNATURE;
+        status_wrapper->tag = state->received_usb_command->tag;
+        status_wrapper->residue = state->residual_bytes;
+        status_wrapper->status = status;
+
+        state->usb_packet_length = sizeof(struct usb_storage_command_status_wrapper);
+
+        /* Done SCSI transaction */
+        state->mode = SEND_DONE;
+        state->next_callback = usb_receive_next_command_callback;
     }
 
-    switch (received_scsi_command->opcode)
+    // usb_status_callback cannot fail because it is the fallback for other commands failing
+    return 0;
+}
+
+static void scsi_swap_command_endianess(struct usb_storage_state *state)
+{
+    union scsi_command_descriptor_block *command_block = state->received_scsi_command;
+    switch (state->received_usb_command->SCSILength)
+    {
+    case 6:
+        command_block->_6.logicalBlockAddress = __REV16(command_block->_6.logicalBlockAddress);
+        break;
+    case 10:
+        command_block->_10.logicalBlockAddress = __REV(command_block->_10.logicalBlockAddress);
+        command_block->_10.length = __REV16(command_block->_10.length);
+        break;
+    case 12:
+        command_block->_12.logicalBlockAddress = __REV(command_block->_12.logicalBlockAddress);
+        command_block->_12.length = __REV(command_block->_12.length);
+        break;
+    case 16:;
+        // 64 bit reverse is not natively supported
+        uint64_t address = command_block->_16.logicalBlockAddress;
+        uint64_t highAddress = __REV(address & 0xffffffff);
+        uint64_t lowAddress = __REV((address >> 32) & 0xffffffff);
+        command_block->_16.logicalBlockAddress = lowAddress | (highAddress << 32);
+
+        command_block->_16.length = __REV(command_block->_16.length);
+        break;
+    }
+}
+
+uint8_t usb_storage_scsi_host_handler(struct usb_storage_state *state)
+{
+    /* Recast any sized command descriptor block into biggest for easier handling */
+
+    // Since opcode is always in the same position any scsi command size can be used
+    switch (state->received_scsi_command->_6.opcode)
     {
     case SCSI_OPCODE_FORMAT_UNIT:
         // Not implemented
         return 1;
         break;
     case SCSI_OPCODE_INQUIRY:
-        scsi_command_callback = scsi_inquiry_callback;
+        state->next_callback = scsi_inquiry_callback;
         break;
     case SCSI_OPCODE_REQUEST_SENSE:
         // Not implemented
         return 1;
         break;
     case SCSI_OPCODE_READ_CAPACITY:
-        scsi_command_callback = scsi_read_capacity_callback;
+        state->next_callback = scsi_read_capacity_callback;
         break;
     case SCSI_OPCODE_READ_10:
-        scsi_command_callback = scsi_read_10_callback;
+        state->next_callback = scsi_read_10_callback;
         break;
     case SCSI_OPCODE_READ_16:
         // Not implemented
@@ -252,16 +329,16 @@ uint8_t usb_storage_scsi_host_handler(uint8_t *cdb_buffer, uint8_t cdb_size)
         break;
     case SCSI_OPCODE_TEST_UNIT_READY:
         /* Device is always ready */
-        scsi_command_callback = usb_status_success_callback;
+        state->next_callback = usb_status_success_callback;
         break;
     case SCSI_MODE_SENSE_6:
-        scsi_command_callback = scsi_mode_sense_callback;
+        state->next_callback = scsi_mode_sense_callback;
         break;
     case SCSI_MEDIUM_REMOVAL:
-        scsi_command_callback = usb_status_success_callback;
+        state->next_callback = usb_status_success_callback;
         break;
     case SCSI_SYNC_CACHE_10:
-        scsi_command_callback = usb_status_success_callback;
+        state->next_callback = usb_status_success_callback;
         break;
     default:
         return 1;
@@ -269,93 +346,51 @@ uint8_t usb_storage_scsi_host_handler(uint8_t *cdb_buffer, uint8_t cdb_size)
     return 0;
 }
 
-static uint8_t usb_status_failed_callback(uint16_t *packet_length, bool *continuation)
+static uint8_t scsi_read_10_callback(struct usb_storage_state *state)
 {
-    return usb_status_callback(packet_length, continuation, 1);
-}
-
-static uint8_t usb_status_success_callback(uint16_t *packet_length, bool *continuation)
-{
-    return usb_status_callback(packet_length, continuation, 0);
-}
-
-static uint8_t usb_status_callback(uint16_t *packet_length, bool *continuation, uint8_t status)
-{
-    /* Clamp padding to not exceed buffer length */
-    uint16_t padding_length = CLAMP_MAX(received_command_wrapper->dataTransferLength, USB_STORAGE_BLOCK_SIZE);
-
-    /* Check if there is still padding left */
-    if (received_command_wrapper->dataTransferLength > 0)
-    {
-        /* Clear buffer */
-        for (uint16_t i = 0; i < padding_length; i++)
-        {
-            in_buffer[i] = 0;
-        }
-
-        /* Added to residual byte count */
-        residual_bytes += padding_length;
-
-        /* Length of the padding to send */
-        *packet_length = padding_length;
-
-        /* No data is left, terminate packet */
-        *continuation = received_command_wrapper->dataTransferLength > 0;
-    }
-    else
-    {
-        /* No padding left, send status */
-        struct usb_storage_command_status_wrapper *status_wrapper = (struct usb_storage_command_status_wrapper *)in_buffer;
-        status_wrapper->signature = USB_STORAGE_SIGNATURE;
-        status_wrapper->tag = received_command_wrapper->tag;
-        status_wrapper->residue = residual_bytes;
-        status_wrapper->status = status;
-
-        *packet_length = sizeof(struct usb_storage_command_status_wrapper);
-
-        /* Done SCSI transaction */
-        scsi_command_callback = 0;
-    }
-
-    // usb_status_callback cannot fail because it is the fallback for other commands failing
-    return 0;
-}
-
-static uint8_t scsi_read_10_callback(uint16_t *packet_length, bool *continuation)
-{
-    // TODO: Read meaningful data instead of numbers
     /* Fill buffer with some numbers to distinguish it */
-    for (uint16_t i = 0; i < 512; i++)
+    uint8_t block_count = CLAMP_MAX(state->received_scsi_command->_10.length, USB_STORAGE_BLOCK_COUNT);
+    for (uint8_t block_num = 0; block_num < block_count; block_num++)
     {
-        in_buffer[i] = i;
+        uint8_t *offset_buffer = state->send_buffer + (USB_STORAGE_BLOCK_SIZE * block_num);
+        uint64_t pos = state->received_scsi_command->_10.logicalBlockAddress;
+        uint64_t sector = pos;
+        if (sector != ~((uint64_t)0))
+        {
+            // Is part of the file sector is offset
+            // TODO: Read meaningful data instead of numbers
+            char ch = 0;
+            memset(offset_buffer, ch, 512);
+            memcpy(offset_buffer, &sector, sizeof(uint64_t));
+        }
+        /* Subtract from the number of blocks left */
+        state->received_scsi_command->_10.length -= 1;
+
+        /* Point to the next block */
+        state->received_scsi_command->_10.logicalBlockAddress += 1;
     }
-
-    /* Subtract from the number of blocks left */
-        received_scsi_command->length -= 1;
-
-    /* Point to the next block */
-        received_scsi_command->logicalBlockAddress += 1;
 
     /* Transfer length */
-    *packet_length = USB_STORAGE_BLOCK_SIZE;
+    state->usb_packet_length = USB_STORAGE_BLOCK_SIZE * block_count;
 
-    if (received_scsi_command->length == 0)
+    if (state->received_scsi_command->_10.length == 0)
     {
         /* No blocks left, send success */
-        scsi_command_callback = usb_status_success_callback;
+        state->next_callback = usb_status_success_callback;
+        state->mode = SEND_DONE;
     }
     else
     {
         /* This is still one packet since not all data has been transferred */
-        *continuation = true;
+        state->mode = SEND_CONTINUE;
     }
 
     return 0;
 }
 
-static uint8_t scsi_inquiry_callback(uint16_t *packet_length, bool *continuation)
+static uint8_t scsi_inquiry_callback(struct usb_storage_state *state)
 {
-    struct scsi_inquiry_reply *inquiry_reply = (struct scsi_inquiry_reply *)in_buffer;
+    struct scsi_inquiry_reply *inquiry_reply = (struct scsi_inquiry_reply *)state->send_buffer;
     // Direct Access Device
     inquiry_reply->peripheralDeviceType = 0;
     // Logical units
@@ -398,27 +433,28 @@ static uint8_t scsi_inquiry_callback(uint16_t *packet_length, bool *continuation
     const char productRevisionLevel[5] = "0001";
     memcpy(inquiry_reply->productRevisionLevel, productRevisionLevel, sizeof(inquiry_reply->productRevisionLevel));
 
-    *packet_length = sizeof(struct scsi_inquiry_reply);
-    scsi_command_callback = usb_status_success_callback;
+    state->usb_packet_length = sizeof(struct scsi_inquiry_reply);
+    state->next_callback = usb_status_success_callback;
+    state->mode = SEND_DONE;
     return 0;
 }
 
-static uint8_t scsi_read_capacity_callback(uint16_t *packet_length, bool *continuation)
+static uint8_t scsi_read_capacity_callback(struct usb_storage_state *state)
 {
-    struct scsi_read_capacity_10_reply *read_capacity_reply = (struct scsi_read_capacity_10_reply *)in_buffer;
-    // TODO: Make this meaningful
+    struct scsi_read_capacity_10_reply *read_capacity_reply = (struct scsi_read_capacity_10_reply *)state->send_buffer;
     /* These need to be big endian hence __REV */
     read_capacity_reply->logicalBlockAddress = __REV(100);
     read_capacity_reply->blockLength = __REV(USB_STORAGE_BLOCK_SIZE);
 
-    *packet_length = sizeof(struct scsi_read_capacity_10_reply);
-    scsi_command_callback = usb_status_success_callback;
+    state->usb_packet_length = sizeof(struct scsi_read_capacity_10_reply);
+    state->next_callback = usb_status_success_callback;
+    state->mode = SEND_DONE;
     return 0;
 }
 
-static uint8_t scsi_mode_sense_callback(uint16_t *packet_length, bool *continuation)
+static uint8_t scsi_mode_sense_callback(struct usb_storage_state *state)
 {
-    struct scsi_mode_sense_reply *mode_sense_reply = (struct scsi_mode_sense_reply *)in_buffer;
+    struct scsi_mode_sense_reply *mode_sense_reply = (struct scsi_mode_sense_reply *)state->send_buffer;
 
     /* Size excluding itself */
     mode_sense_reply->modeDataLength = sizeof(struct scsi_mode_sense_reply) - 1;
@@ -456,7 +492,9 @@ static uint8_t scsi_mode_sense_callback(uint16_t *packet_length, bool *continuat
     mode_sense_reply->intervalTime = 0;
     mode_sense_reply->reportCount = 0;
 
-    *packet_length = received_command_wrapper->dataTransferLength;
-    scsi_command_callback = usb_status_success_callback;
+    state->usb_packet_length = state->received_usb_command->dataTransferLength;
+    state->next_callback = usb_status_success_callback;
+    // TODO: Set this as a default argument
+    state->mode = SEND_DONE;
     return 0;
 }

@@ -1,48 +1,18 @@
 /**
- * @file usb-storage-standard.h
- * @desc Definitions from relating to USB Mass Storage devices
+ * @file scsi-standard.h
+ * @desc Definitions relating to SCSI commands
  * @author Quinn Parrott
- * @date 2020-02-13
- * Last Author:
- * Last Edited On:
+ * @date 2020-05-07
  */
 
-#ifndef usb_storage_standard_h
-#define usb_storage_standard_h
+#ifndef scsi_standard_h
+#define scsi_standard_h
 
 // Ignore warnings in this file about inefficient alignment
 #pragma GCC diagnostic ignored "-Wattributes"
 #pragma GCC diagnostic ignored "-Wpacked"
 
-#define USB_STORAGE_CLASS_CODE 0x08
-
-/* SCSI instuction set not reported */
-#define USB_STORAGE_SUBCLASS_NONE 0x00
-/* SCSI Reduced Block Command instruction set */
-#define USB_STORAGE_SUBCLASS_RBC 0x01
-/* SCSI transparent command set */
-#define USB_STORAGE_SUBCLASS_TRANSPARENT 0x06
-
-/* USB Mass Storage Class Bulk-Only Transport */
-#define USB_STORAGE_PROTOCOL_CODE 0x50
-
-/* USB Mass Storage Command Block Wrapper Signature */
-#define USB_STORAGE_SIGNATURE 0x43425355
-
-/* Common block size */
-#define USB_STORAGE_BLOCK_SIZE 512
-
-/**
- * USB Mass Storage class specific as defined in
- *
- * USB Mass Storage Class Bulk-Only Transport Rev 1.0 Section 3
- * @see https://www.usb.org/sites/default/files/usbmassbulk_10.pdf
- */
-enum usb_storage_class_specific
-{
-    USB_STORAGE_REQ_RESET = 0xff,
-    USB_STORAGE_REQ_MAX_LUN = 0xfe,
-};
+#include "global.h"
 
 /**
  * SCSI Opcodes
@@ -57,6 +27,7 @@ enum scsi_opcodes
     SCSI_OPCODE_REQUEST_SENSE = 0x03,
     SCSI_OPCODE_READ_CAPACITY = 0x25,
     SCSI_OPCODE_READ_10 = 0x28,
+    SCSI_OPCODE_WRITE_10 = 0x2a,
     SCSI_OPCODE_READ_16 = 0x88,
     SCSI_OPCODE_REPORT_LUNS = 0xa0,
     SCSI_OPCODE_SEND_DIAGNOSTIC = 0x1d,
@@ -65,47 +36,6 @@ enum scsi_opcodes
     SCSI_MEDIUM_REMOVAL = 0x1e,
     SCSI_SYNC_CACHE_10 = 0x35,
 };
-
-/**
- * USB Mass Storage Command Block Wrapper and
- * a SCSI Command Desctiptor Block.
- *
- * Section 5.1 for Command Block Wrapper
- * @see https://www.usb.org/sites/default/files/usbmassbulk_10.pdf
- */
-struct usb_storage_command_block_wrapper
-{
-    /* This will always be 'USBC' */
-    uint32_t signature;
-    /* Transaction number */
-    uint32_t tag;
-    /* Expected length of next command */
-    uint32_t dataTransferLength;
-    /* 0x80 if response data is expected */
-    uint8_t flags;
-    /* Logical Unit Number */
-    uint8_t lun;
-    /* Command block length */
-    uint8_t SCSILength;
-} __attribute__((packed));
-
-/**
- * USB Mass Storage Command Status Wrapper
- *
- * Section 5.2
- * @see https://www.usb.org/sites/default/files/usbmassbulk_10.pdf
- */
-struct usb_storage_command_status_wrapper
-{
-    /* This will always be 'USBC' */
-    uint32_t signature;
-    /* Transaction number */
-    uint32_t tag;
-    /* Amount of data not processed */
-    uint32_t residue;
-    /* Status */
-    uint8_t status;
-} __attribute__((packed));
 
 /**
  * SCSI Command Descriptor Blocks (6 bytes)
@@ -198,11 +128,30 @@ typedef struct scsi_command_descriptor_block_16
  */
 typedef union scsi_command_descriptor_block
 {
-    struct scsi_command_descriptor_block_6 _6;
-    struct scsi_command_descriptor_block_10 _10;
-    struct scsi_command_descriptor_block_12 _12;
-    struct scsi_command_descriptor_block_16 _16;
+    scsi_command_descriptor_block_6 _6;
+    scsi_command_descriptor_block_10 _10;
+    scsi_command_descriptor_block_12 _12;
+    scsi_command_descriptor_block_16 _16;
 } __attribute__((packed)) scsi_command_descriptor_block;
+
+/**
+ * SCSI request sense reply
+ *
+ * Chapter 2 Page 65 of Oracle SCSI Reference Guide
+ * @see https://docs.oracle.com/en/storage/tape-storage/storagetek-sl150-modular-tape-library/slorm/scsi-reference-guide.pdf
+ */
+struct scsi_request_sense_reply
+{
+    uint8_t responseCode : 7;
+    uint16_t reserved1 : 9;
+    uint8_t senseKey : 4;
+    uint64_t reserved2 : 36;
+    uint8_t additionalSenseLength : 8;
+    uint32_t commandSpecificInformation : 32;
+    uint8_t additionalSenseCode : 8;
+    uint8_t additionalSenseCodeQualifier : 8;
+    uint32_t reserved3 : 32;
+} __attribute__((packed));
 
 /**
  * SCSI Read Capacity reply
@@ -258,21 +207,54 @@ struct scsi_inquiry_reply
 /**
  * SCSI mode sense reply
  *
- * Section 5.3.{2, 9, 18} of Seagate SCSI Commands Referenc Manual
+ * Section 5.3.{2, 9, 18} of Seagate SCSI Commands Reference Manual
  */
 struct scsi_mode_sense_reply
 {
     /* Header */
     uint8_t modeDataLength : 8;
     uint8_t mediumType : 8;
-    uint8_t reserved1 : 8;
+    uint8_t reserved1 : 7;
+    uint8_t writeProtected : 1;
     uint8_t blockDescriptorLength : 8;
+
+    /* Control Mode Page */
+    uint8_t controlPageCode : 6;
+    uint8_t controlSPF : 1;
+    uint8_t controlPS : 1;
+    uint8_t controlPageLength : 8;
+    uint8_t RLEC : 1;
+    uint8_t GLTSD : 1;
+    uint8_t D_SENSE : 1;
+    uint8_t DPICZ : 1;
+    uint8_t TMF_ONLY : 1;
+    uint8_t TST : 3;
+    uint8_t DQUE_obsolete : 1;
+    uint8_t QERR : 2;
+    uint8_t NUAR : 1;
+    uint8_t QueueAlgorithmModifier : 4;
+    uint8_t EAERP_obsolete : 1;
+    uint8_t UAAERP_obsolete : 1;
+    uint8_t RAERP_obsolete : 1;
+    uint8_t SWP : 1;
+    uint8_t UA_INTLCK_CTRL : 2;
+    uint8_t RAC : 1;
+    uint8_t VS : 1;
+    uint8_t AutoloadMode : 3;
+    uint8_t reserved2 : 1;
+    uint8_t RWWP : 1;
+    uint8_t ATMPE : 1;
+    uint8_t TAS : 1;
+    uint8_t ATO : 1;
+    uint16_t obsolete1;
+    uint16_t controlBusyTimeoutPeriod;
+    uint16_t controlExtendedSelfTestCompletionTime;
 
     /* Cache Mode Page */
     uint8_t cachePageCode : 6;
     uint8_t cacheSPF : 1;
     uint8_t cachePS : 1;
-    uint8_t cachePageLength;
+    uint8_t cachePageLength : 8;
     uint8_t options1;
     uint8_t writeRetentionPriority : 4;
     uint8_t readRetentionPriority : 4;
@@ -283,17 +265,17 @@ struct scsi_mode_sense_reply
     uint8_t options2;
     uint8_t numberCache;
     uint16_t cacheSegmentSize;
-    uint8_t reserved2;
-    uint32_t obsolete1 : 24;
+    uint8_t reserved3;
+    uint32_t obsolete2 : 24;
 
     /* Informational Exceptions Control Mode Page */
     uint8_t exceptPageCode : 6;
     uint8_t exceptSPF : 1;
     uint8_t exceptPS : 1;
-    uint8_t exceptPageLength;
+    uint8_t exceptPageLength : 8;
     uint8_t options3;
     uint8_t MRIE : 4;
-    uint8_t reserved3 : 4;
+    uint8_t reserved4 : 4;
     uint32_t intervalTime;
     uint32_t reportCount;
 } __attribute__((packed));
@@ -301,4 +283,4 @@ struct scsi_mode_sense_reply
 // Stop ignoring warnings about inefficient alignment
 #pragma GCC diagnostic pop
 
-#endif /* usb_storage_standard_h */
+#endif /* scsi_standard_h */
