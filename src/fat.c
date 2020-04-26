@@ -10,9 +10,7 @@
 #include "fat.h"
 
 #include <string.h>
-
-// The brackets around each variable are necessary so inline math works correctly
-#define INTEGER_DIVISION_ROUND_UP(dividend, divisor) (((dividend) / (divisor)) + (((dividend) % (divisor)) > 0))
+#include "math_util.h"
 
 // Rollover is the number of cluster per file
 static const uint64_t rollover = (((uint64_t)1) << 32) / (FAT_SECTOR_SIZE * FAT_SECTOR_PER_CLUSTER) - 1;
