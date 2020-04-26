@@ -41,11 +41,11 @@ struct usb_storage_state
     enum usb_storage_mode_type mode;
 
     /* The buffer data is received and sent in */
-    uint8_t * const send_buffer;
+    uint8_t *const send_buffer;
 
-    struct usb_storage_command_block_wrapper * const received_usb_command;
+    struct usb_storage_command_block_wrapper *const received_usb_command;
 
-    union scsi_command_descriptor_block * const received_scsi_command;
+    union scsi_command_descriptor_block *const received_scsi_command;
 
     /* Length of the current partial packet */
     uint16_t usb_packet_length;
@@ -86,16 +86,5 @@ extern void usb_storage_enable_config_callback(void);
  *  Callback for when mass storage configuration is disabled by host.
  */
 extern void usb_storage_disable_config_callback(void);
-
-/**
- * Handle SCSI commands from host
- *
- * @param cdb_buffer SCSI Command Descriptor Block buffer
- * @param cdb_size Size of the SCSI command
- * @param reply_length The length of the contents reply
- *
- * @return 0 if successful, non-zero otherwise
- */
-extern uint8_t usb_storage_scsi_host_handler(struct usb_storage_state *state);
 
 #endif /* usb_storage_h */
