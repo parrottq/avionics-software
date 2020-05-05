@@ -254,10 +254,45 @@ uint8_t scsi_mode_sense_callback(struct usb_storage_state *state)
 
     /* Size excluding itself */
     mode_sense_reply->modeDataLength = sizeof(struct scsi_mode_sense_reply) - 1;
+
     /* Header */
     mode_sense_reply->mediumType = 0;
     mode_sense_reply->reserved1 = 0;
+    mode_sense_reply->writeProtected = 1;
     mode_sense_reply->blockDescriptorLength = 0;
+
+    /* Control Mode Page */
+    mode_sense_reply->controlPageCode = 0x0a;
+    mode_sense_reply->controlSPF = 0;
+    mode_sense_reply->controlPS = 0;
+    mode_sense_reply->controlPageLength = 10;
+    mode_sense_reply->RLEC = 0;
+    mode_sense_reply->GLTSD = 0;
+    mode_sense_reply->D_SENSE = 0;
+    mode_sense_reply->DPICZ = 0;
+    mode_sense_reply->TMF_ONLY = 0;
+    mode_sense_reply->TST = 0;
+    mode_sense_reply->DQUE_obsolete = 0;
+    mode_sense_reply->QERR = 0b11;
+    mode_sense_reply->NUAR = 0;
+    mode_sense_reply->QueueAlgorithmModifier = 0;
+    mode_sense_reply->EAERP_obsolete = 0;
+    mode_sense_reply->UAAERP_obsolete = 0;
+    mode_sense_reply->RAERP_obsolete = 0;
+    /* Software Write Protect */
+    mode_sense_reply->SWP = 1;
+    mode_sense_reply->UA_INTLCK_CTRL = 0;
+    mode_sense_reply->RAC = 0;
+    mode_sense_reply->VS = 0;
+    mode_sense_reply->AutoloadMode = 0;
+    mode_sense_reply->reserved2 = 0;
+    mode_sense_reply->RWWP = 0;
+    mode_sense_reply->ATMPE = 0;
+    mode_sense_reply->TAS = 0;
+    mode_sense_reply->ATO = 1;
+    mode_sense_reply->obsolete1 = 0;
+    mode_sense_reply->controlBusyTimeoutPeriod = 10;
+    mode_sense_reply->controlExtendedSelfTestCompletionTime = 0;
 
     /* Cache Mode Page */
     mode_sense_reply->cachePageCode = 0x8;
@@ -274,8 +309,8 @@ uint8_t scsi_mode_sense_callback(struct usb_storage_state *state)
     mode_sense_reply->options2 = 0;
     mode_sense_reply->numberCache = 0;
     mode_sense_reply->cacheSegmentSize = 0;
-    mode_sense_reply->reserved2 = 0;
-    mode_sense_reply->obsolete1 = 0;
+    mode_sense_reply->reserved3 = 0;
+    mode_sense_reply->obsolete2 = 0;
 
     /* Informational Exceptions Control Mode Page */
     mode_sense_reply->exceptPageCode = 0x1c;
@@ -284,7 +319,7 @@ uint8_t scsi_mode_sense_callback(struct usb_storage_state *state)
     mode_sense_reply->exceptPageLength = 10;
     mode_sense_reply->options3 = 0;
     mode_sense_reply->MRIE = 0;
-    mode_sense_reply->reserved3 = 0;
+    mode_sense_reply->reserved4 = 0;
     mode_sense_reply->intervalTime = 0;
     mode_sense_reply->reportCount = 0;
 
