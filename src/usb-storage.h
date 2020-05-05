@@ -47,6 +47,9 @@ struct usb_storage_state
 
     union scsi_command_descriptor_block *const received_scsi_command;
 
+    /* Number of bytes received */
+    const uint16_t received_byte_count;
+
     /* Length of the current partial packet */
     uint16_t usb_packet_length;
 };

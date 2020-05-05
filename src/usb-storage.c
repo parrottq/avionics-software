@@ -130,10 +130,13 @@ static void data_received_complete(uint16_t length)
         /* Point to USB and SCSI command blocks */
         .received_usb_command = &storage_usb_command,
         .received_scsi_command = &storage_scsi_command,
+
+        /* Copy the number of received bytes */
+        .received_byte_count = length,
     };
 
     /* Check if triggered by send or received */
-    if (length > 0)
+    if (state.received_byte_count > 0)
     {
         /* Is this a new command, or incoming data */
         if (state.mode != RECEIVE)
@@ -207,7 +210,7 @@ static void process_command(struct usb_storage_state *state)
         break;
     default:
         // RECEIVED and NEXT_COMMAND
-        usb_start_out(USB_ENDPOINT_OUT_STORAGE, state->send_buffer, USB_STORAGE_MAX_OUT_BUFFER);
+        usb_start_out(USB_ENDPOINT_OUT_STORAGE, state->send_buffer, USB_STORAGE_BLOCK_SIZE * USB_STORAGE_BLOCK_COUNT);
         break;
     }
 }

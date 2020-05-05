@@ -266,14 +266,47 @@ struct scsi_mode_sense_reply
     /* Header */
     uint8_t modeDataLength : 8;
     uint8_t mediumType : 8;
-    uint8_t reserved1 : 8;
+    uint8_t reserved1 : 7;
+    uint8_t writeProtected : 1;
     uint8_t blockDescriptorLength : 8;
+
+    /* Control Mode Page */
+    uint8_t controlPageCode : 6;
+    uint8_t controlSPF : 1;
+    uint8_t controlPS : 1;
+    uint8_t controlPageLength : 8;
+    uint8_t RLEC : 1;
+    uint8_t GLTSD : 1;
+    uint8_t D_SENSE : 1;
+    uint8_t DPICZ : 1;
+    uint8_t TMF_ONLY : 1;
+    uint8_t TST : 3;
+    uint8_t DQUE_obsolete : 1;
+    uint8_t QERR : 2;
+    uint8_t NUAR : 1;
+    uint8_t QueueAlgorithmModifier : 4;
+    uint8_t EAERP_obsolete : 1;
+    uint8_t UAAERP_obsolete : 1;
+    uint8_t RAERP_obsolete : 1;
+    uint8_t SWP : 1;
+    uint8_t UA_INTLCK_CTRL : 2;
+    uint8_t RAC : 1;
+    uint8_t VS : 1;
+    uint8_t AutoloadMode : 3;
+    uint8_t reserved2 : 1;
+    uint8_t RWWP : 1;
+    uint8_t ATMPE : 1;
+    uint8_t TAS : 1;
+    uint8_t ATO : 1;
+    uint16_t obsolete1;
+    uint16_t controlBusyTimeoutPeriod;
+    uint16_t controlExtendedSelfTestCompletionTime;
 
     /* Cache Mode Page */
     uint8_t cachePageCode : 6;
     uint8_t cacheSPF : 1;
     uint8_t cachePS : 1;
-    uint8_t cachePageLength;
+    uint8_t cachePageLength : 8;
     uint8_t options1;
     uint8_t writeRetentionPriority : 4;
     uint8_t readRetentionPriority : 4;
@@ -284,17 +317,17 @@ struct scsi_mode_sense_reply
     uint8_t options2;
     uint8_t numberCache;
     uint16_t cacheSegmentSize;
-    uint8_t reserved2;
-    uint32_t obsolete1 : 24;
+    uint8_t reserved3;
+    uint32_t obsolete2 : 24;
 
     /* Informational Exceptions Control Mode Page */
     uint8_t exceptPageCode : 6;
     uint8_t exceptSPF : 1;
     uint8_t exceptPS : 1;
-    uint8_t exceptPageLength;
+    uint8_t exceptPageLength : 8;
     uint8_t options3;
     uint8_t MRIE : 4;
-    uint8_t reserved3 : 4;
+    uint8_t reserved4 : 4;
     uint32_t intervalTime;
     uint32_t reportCount;
 } __attribute__((packed));
