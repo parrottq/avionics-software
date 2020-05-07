@@ -12,7 +12,7 @@
 #define scsi_h
 
 #include "global.h"
-#include "usb-storage.h"
+#include "usb-storage-state.h"
 
 /**
  * Set the proper SCSI command callback depending on the contents of
