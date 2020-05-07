@@ -9,12 +9,11 @@
 
 #include "usb-storage.h"
 
-#include "global.h"
 #include <string.h>
 #include "math_util.h"
 
-#include "usb-standard.h"
 #include "usb-storage-standard.h"
+#include "usb-storage-state.h"
 
 #include "usb.h"
 #include "usb-address.h"

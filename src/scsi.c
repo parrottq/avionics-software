@@ -12,11 +12,10 @@
 #include <string.h>
 
 #include "config.h"
+#include "math_util.h"
 #include "usb-storage-standard.h"
 
 #include "fat.h"
-
-#include "math_util.h"
 
 static const uint64_t size_of_partition = 14336000;
 
