@@ -3,16 +3,15 @@
  * @desc SCSI commands
  * @author Quinn Parrott
  * @date 2020-04-26
- * Last Author:
- * Last Edited On:
  */
 
 #include "scsi.h"
 
 #include <string.h>
+#include "math_util.h"
 
 #include "config.h"
-#include "math_util.h"
+#include "scsi-standard.h"
 #include "usb-storage-standard.h"
 
 #include "fat.h"
