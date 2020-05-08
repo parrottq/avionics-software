@@ -3,8 +3,6 @@
  * @desc USB Mass Storage implementation
  * @author Quinn Parrott
  * @date 2020-02-14
- * Last Author:
- * Last Edited On:
  */
 
 #include "usb-storage.h"
@@ -12,6 +10,7 @@
 #include <string.h>
 #include "math_util.h"
 
+#include "scsi-standard.h"
 #include "usb-storage-standard.h"
 #include "usb-storage-state.h"
 
