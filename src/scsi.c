@@ -88,37 +88,17 @@ uint8_t scsi_set_command_callback(struct usb_storage_state *state)
     // Since opcode is always in the same position any scsi command size can be used
     switch (state->received_scsi_command->_6.opcode)
     {
-    case SCSI_OPCODE_FORMAT_UNIT:
-        // Not implemented
-        return 1;
+    case SCSI_OPCODE_REQUEST_SENSE:
+        state->next_callback = scsi_request_sense_callback;
         break;
     case SCSI_OPCODE_INQUIRY:
         state->next_callback = scsi_inquiry_callback;
-        break;
-    case SCSI_OPCODE_REQUEST_SENSE:
-        // Not implemented
-        return 1;
         break;
     case SCSI_OPCODE_READ_CAPACITY:
         state->next_callback = scsi_read_capacity_callback;
         break;
     case SCSI_OPCODE_READ_10:
         state->next_callback = scsi_read_10_callback;
-        break;
-    case SCSI_OPCODE_WRITE_10:
-        // TODO: Needs to work
-        break;
-    case SCSI_OPCODE_READ_16:
-        // Not implemented
-        return 1;
-        break;
-    case SCSI_OPCODE_REPORT_LUNS:
-        // Not implemented
-        return 1;
-        break;
-    case SCSI_OPCODE_SEND_DIAGNOSTIC:
-        // Not implemented
-        return 1;
         break;
     case SCSI_OPCODE_TEST_UNIT_READY:
         /* Device is always ready */
@@ -134,8 +114,43 @@ uint8_t scsi_set_command_callback(struct usb_storage_state *state)
         state->next_callback = usb_status_success_callback;
         break;
     default:
+        state->error.senseKey = 5;
+        state->error.commandSpecificInformation = 0;
+        state->error.additionalSenseCode = 20;
+        state->error.additionalSenseCodeQualifier = 0;
         return 1;
     }
+    return 0;
+}
+
+uint8_t scsi_request_sense_callback(struct usb_storage_state *state)
+{
+    // Padding extra space
+    if (state->received_scsi_command->_6.length > sizeof(struct scsi_request_sense_reply))
+    {
+        memset(state->send_buffer, 0, state->received_scsi_command->_6.length);
+    }
+
+    struct scsi_request_sense_reply *error_reply = (struct scsi_request_sense_reply *)state->send_buffer;
+    error_reply->responseCode = 0x70;
+    error_reply->reserved1 = 0;
+    error_reply->senseKey = state->error.senseKey;
+    error_reply->reserved2 = 0;
+    error_reply->additionalSenseLength = 10;
+    error_reply->commandSpecificInformation = state->error.commandSpecificInformation;
+    error_reply->additionalSenseCode = state->error.additionalSenseCode;
+    error_reply->additionalSenseCodeQualifier = state->error.additionalSenseCodeQualifier;
+    error_reply->reserved3 = 0;
+
+    // Now that error is sent clear it
+    state->error.senseKey = 0;
+    state->error.commandSpecificInformation = 0;
+    state->error.additionalSenseCode = 0;
+    state->error.additionalSenseCodeQualifier = 0;
+
+    state->usb_packet_length = state->received_scsi_command->_6.length;
+    state->next_callback = usb_status_success_callback;
+    state->mode = SEND_DONE;
     return 0;
 }
 

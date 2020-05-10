@@ -121,6 +121,7 @@ static void data_received_complete(uint16_t length)
         .next_callback = stored_state.next_callback,
         .residual_bytes = stored_state.residual_bytes,
         .mode = stored_state.mode,
+        .error = stored_state.error,
 
         /* Point to storage buffer */
         .send_buffer = storage_data_buffer,
@@ -173,6 +174,7 @@ static void data_received_complete(uint16_t length)
     stored_state.next_callback = state.next_callback;
     stored_state.residual_bytes = state.residual_bytes;
     stored_state.mode = state.mode;
+    stored_state.error = state.error;
 }
 
 static void process_command(struct usb_storage_state *state)

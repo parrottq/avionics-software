@@ -43,6 +43,7 @@ extern uint8_t usb_status_success_callback(struct usb_storage_state *state);
 extern uint8_t usb_status_failed_callback(struct usb_storage_state *state);
 
 /* SCSI command callbacks */
+extern uint8_t scsi_request_sense_callback(struct usb_storage_state *state);
 extern uint8_t scsi_inquiry_callback(struct usb_storage_state *state);
 extern uint8_t scsi_read_capacity_callback(struct usb_storage_state *state);
 extern uint8_t scsi_read_10_callback(struct usb_storage_state *state);

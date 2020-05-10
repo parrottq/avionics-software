@@ -22,6 +22,14 @@ enum usb_storage_mode_type
     NEXT_COMMAND,
 };
 
+struct usb_storage_error
+{
+    uint8_t senseKey : 4;
+    uint32_t commandSpecificInformation : 32;
+    uint8_t additionalSenseCode : 8;
+    uint8_t additionalSenseCodeQualifier : 8;
+} ;
+
 struct usb_storage_state
 {
     /* The function to call once the data transfer is done */
@@ -32,6 +40,9 @@ struct usb_storage_state
 
     /* What buffer was filled */
     enum usb_storage_mode_type mode;
+
+    /* Error type */
+    struct usb_storage_error error;
 
     /* The buffer data is received and sent in */
     uint8_t *const send_buffer;
@@ -58,6 +69,9 @@ struct usb_storage_persistent_state
 
     /* What buffer was filled */
     enum usb_storage_mode_type mode;
+
+    /* Error type */
+    struct usb_storage_error error;
 };
 
 #endif /* usb_storage_state_h */
