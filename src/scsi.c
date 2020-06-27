@@ -55,7 +55,7 @@ static uint8_t usb_status_callback(struct usb_storage_state *state, uint8_t stat
     {
         /* No padding left, send status */
         struct usb_storage_command_status_wrapper *status_wrapper = (struct usb_storage_command_status_wrapper *)state->send_buffer;
-        status_wrapper->signature = USB_STORAGE_SIGNATURE;
+        status_wrapper->signature = USB_STORAGE_COMMAND_STATUS_WRAPPER_SIGNATURE;
         status_wrapper->tag = state->received_usb_command->tag;
         status_wrapper->residue = state->residual_bytes;
         status_wrapper->status = status;

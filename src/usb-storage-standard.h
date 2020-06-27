@@ -25,7 +25,9 @@
 #define USB_STORAGE_PROTOCOL_CODE 0x50
 
 /* USB Mass Storage Command Block Wrapper Signature */
-#define USB_STORAGE_SIGNATURE 0x43425355
+#define USB_STORAGE_COMMAND_BLOCK_WRAPPER_SIGNATURE  0x43425355
+/* USB Mass Storage Command Status Wrapper Signature */
+#define USB_STORAGE_COMMAND_STATUS_WRAPPER_SIGNATURE 0x53425355
 
 /* Common block size */
 #define USB_STORAGE_BLOCK_SIZE 512

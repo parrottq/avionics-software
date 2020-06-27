@@ -156,7 +156,7 @@ static void data_received_complete(uint16_t length)
             swap_command_endianess(&state);
 
             /* If signature does not match or scsi parsing fails -> status failed */
-            if (state.received_usb_command->signature != USB_STORAGE_SIGNATURE ||
+            if (state.received_usb_command->signature != USB_STORAGE_COMMAND_BLOCK_WRAPPER_SIGNATURE ||
                 scsi_set_command_callback(&state) != 0)
             {
                 /* SCSI handling failed */
