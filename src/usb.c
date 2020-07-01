@@ -13,6 +13,7 @@
 #include "usb.h"
 
 #include "config.h"
+#include "usb-address.h"
 
 #include <string.h> // for memcpy
 
@@ -130,13 +131,13 @@ static void handle_ep_0_multi_packet_in (void)
     // Determine how many bytes are left after this packet
     usb_ep_0_in_size -= size;
     // Send the data, auto ZLP if this is the last packet
-    usb_start_in(0, usb_ep_0_in_buf_g, size, (usb_ep_0_in_size == 0));
+    usb_start_in(USB_ENDPOINT_IN_ROOT, usb_ep_0_in_buf_g, size, (usb_ep_0_in_size == 0));
     // If this was the last block, clean up
     if (usb_ep_0_in_size == 0) {
         // Set pointer to NULL to indicate that all blocks have been sent
         usb_ep_0_in_p = NULL;
         // We can start our next out.
-        //usb_start_out(0, usb_ep_0_out_buf_g, USB_EP_0_LENGTH);
+        //usb_start_out(USB_ENDPOINT_IN_ROOT, usb_ep_0_out_buf_g, USB_EP_0_LENGTH);
     } else {
         // Update pointer for next block
         usb_ep_0_in_p += size;
@@ -168,17 +169,17 @@ static void endpoint_0_in_complete (void)
 static void config_endpoint_zero(void)
 {
     /* Configure in bank */
-    usb_enable_endpoint_in(0, USB_EP_0_LENGTH, USB_ENDPOINT_TYPE_CONTROL,
+    usb_enable_endpoint_in(USB_ENDPOINT_IN_ROOT, USB_EP_0_LENGTH, USB_ENDPOINT_TYPE_CONTROL,
                            &endpoint_0_in_complete);
     /* Configure out bank */
-    usb_enable_endpoint_out(0, USB_EP_0_LENGTH, USB_ENDPOINT_TYPE_CONTROL,
+    usb_enable_endpoint_out(USB_ENDPOINT_IN_ROOT, USB_EP_0_LENGTH, USB_ENDPOINT_TYPE_CONTROL,
                             NULL);
     
     /* Enable endpoint 0 received setup interrupt */
     USB->DEVICE.DeviceEndpoint[0].EPINTENSET.reg = USB_DEVICE_EPINTENSET_RXSTP;
     
     /* Start out on endpoint 0 */
-    usb_start_out(0, usb_ep_0_out_buf_g, USB_EP_0_LENGTH);
+    usb_start_out(USB_ENDPOINT_IN_ROOT, usb_ep_0_out_buf_g, USB_EP_0_LENGTH);
 }
 
 // MARK: Externally Visible Functions
@@ -419,7 +420,7 @@ static inline void usb_handle_setup (struct usb_setup_packet *packet)
                                           &response_buffer);
         if (ret) {
             // Request Error
-            usb_stall(0, USB_ENDPOINT_STALL_BOTH);
+            usb_stall(USB_ENDPOINT_IN_ROOT, USB_ENDPOINT_STALL_BOTH);
             return;
         }
     } else if (packet->bmRequestType.type != USB_REQ_TYPE_STANDARD) {
@@ -451,7 +452,7 @@ static inline void usb_handle_setup (struct usb_setup_packet *packet)
                                                      &response_buffer);
                 if (response_length == 0) {
                     // Requested descriptor not supported, Request Error
-                    usb_stall(0, USB_ENDPOINT_STALL_BOTH);
+                    usb_stall(USB_ENDPOINT_IN_ROOT, USB_ENDPOINT_STALL_BOTH);
                     return;
                 } else if (response_length > packet->wLength) {
                     // Our descriptor is too big, only send as much as the host
@@ -461,7 +462,7 @@ static inline void usb_handle_setup (struct usb_setup_packet *packet)
                 break;
             case USB_REQ_SET_DESCRIPTOR:
                 // Request Error
-                usb_stall(0, USB_ENDPOINT_STALL_BOTH);
+                usb_stall(USB_ENDPOINT_IN_ROOT, USB_ENDPOINT_STALL_BOTH);
                 return;
             case USB_REQ_GET_CONFIGURATION:
                 // Return the current configuration
@@ -488,7 +489,7 @@ static inline void usb_handle_setup (struct usb_setup_packet *packet)
                     }
                 } else {
                     // Request Error
-                    usb_stall(0, USB_ENDPOINT_STALL_BOTH);
+                    usb_stall(USB_ENDPOINT_IN_ROOT, USB_ENDPOINT_STALL_BOTH);
                     return;
                 }
                 // Send a 0 length response
@@ -498,7 +499,7 @@ static inline void usb_handle_setup (struct usb_setup_packet *packet)
                 if (usb_current_config_g == 0) {
                     // Not configured (in address or default state)
                     // Request Error
-                    usb_stall(0, USB_ENDPOINT_STALL_BOTH);
+                    usb_stall(USB_ENDPOINT_IN_ROOT, USB_ENDPOINT_STALL_BOTH);
                     return;
                 } else {
                     // TODO: Not clear what to do here, for now just return 0
@@ -508,15 +509,15 @@ static inline void usb_handle_setup (struct usb_setup_packet *packet)
                 break;
             case USB_REQ_SET_INTERFACE:
                 // TODO: Not clear what to do here, for now just stall
-                usb_stall(0, USB_ENDPOINT_STALL_BOTH);
+                usb_stall(USB_ENDPOINT_IN_ROOT, USB_ENDPOINT_STALL_BOTH);
                 return;
             case USB_REQ_SYNCH_FRAME:
                 // Not supported, Request Error
-                usb_stall(0, USB_ENDPOINT_STALL_BOTH);
+                usb_stall(USB_ENDPOINT_IN_ROOT, USB_ENDPOINT_STALL_BOTH);
                 return;
             default:
                 // Unknown request, Request Error
-                usb_stall(0, USB_ENDPOINT_STALL_BOTH);
+                usb_stall(USB_ENDPOINT_IN_ROOT, USB_ENDPOINT_STALL_BOTH);
                 return;
         }
     }
@@ -525,9 +526,9 @@ static inline void usb_handle_setup (struct usb_setup_packet *packet)
     if ((response_buffer == usb_ep_0_in_buf_g) || (response_length == 0)) {
         // We are sending directly from the in buffer or we are sending a zero
         // length response, let hardware handle transmission and ZLP
-        usb_start_in(0, response_buffer, response_length, 1);
+        usb_start_in(USB_ENDPOINT_IN_ROOT, response_buffer, response_length, 1);
         // Be ready for another setup packet
-        //usb_start_out(0, usb_ep_0_out_buf_g, USB_EP_0_LENGTH);
+        //usb_start_out(USB_ENDPOINT_IN_ROOT, usb_ep_0_out_buf_g, USB_EP_0_LENGTH);
     } else {
         // We are sending from some unknown buffer, we don't know for sure so we
         // have to assume that it is in non-volatile memory and therefor not
@@ -541,7 +542,7 @@ static inline void usb_handle_setup (struct usb_setup_packet *packet)
         // Start multi packet in transaction
         handle_ep_0_multi_packet_in();
     }
-    usb_start_out(0, usb_ep_0_out_buf_g, USB_EP_0_LENGTH);
+    usb_start_out(USB_ENDPOINT_IN_ROOT, usb_ep_0_out_buf_g, USB_EP_0_LENGTH);
 }
 
 
