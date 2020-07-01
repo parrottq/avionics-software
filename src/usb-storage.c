@@ -74,8 +74,9 @@ uint8_t usb_storage_class_request_callback(struct usb_setup_packet *packet,
         *response_buffer = (const uint8_t *)&lun_response;
         break;
     case USB_STORAGE_REQ_RESET:
-        // Not supported
         return 1;
+        *response_length = 0;
+        break;
     default:
         // Unknown request, Request Error
         return 1;
