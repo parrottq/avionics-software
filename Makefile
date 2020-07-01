@@ -35,6 +35,7 @@ OPENOCD_CONFIG = openocd.cfg
 
 # Target file name (without extension).
 TARGET = main
+GIT_HASH = $(shell git rev-parse --verify HEAD)
 
 SRCDIR = src
 # List C source files here. (C dependencies are automatically generated.)
@@ -106,6 +107,7 @@ CFLAGS += -Wlogical-op -Wold-style-definition -Wcast-qual -Wdouble-promotion
 CFLAGS += -Wunsuffixed-float-constants -Wmissing-include-dirs -Wnormalized
 CLFAGS += -Wdisabled-optimization -Wsuggest-attribute=const
 
+CFLAGS += -DAVIONICS_VERSION="u\"$(GIT_HASH)\""
 # These warning may be usefull in some cases, but cause too many false positives
 # to be enabled all of the time: -Winline -Wpadded -Wvla -Wpedantic -Wconversion
 # -Wnull-dereference -Wsuggest-attribute=noreturn -Wsuggest-attribute=pure

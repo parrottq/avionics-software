@@ -79,7 +79,7 @@ __attribute__((__aligned__(4))) static const struct usb_device_descriptor
     
     .iManufacturer          = 0x01,
     .iProduct               = 0x02,
-    .iSerialNumber          = 0x00,//0x03,
+    .iSerialNumber          = 0x03,
     
     .bNumConfigurations     = 1
 };
@@ -107,12 +107,21 @@ static const struct usb_string_descriptor usb_string_product = {
     .bString = USB_PRODUCT_STRING
 };
 
+/** String description of serial number */
+static const struct usb_string_descriptor usb_string_serial_num = {
+    .bLength = (sizeof(struct usb_string_descriptor) +
+                sizeof(AVIONICS_VERSION)),
+    .bDescriptorType = USB_DESC_TYPE_STRING,
+    .bString = AVIONICS_VERSION
+};
+
 /** Number of string descriptors */
-static const uint8_t usb_num_strings_g = 2;
+static const uint8_t usb_num_strings_g = 3;
 /** Pointer to string descriptors */
 static const struct usb_string_descriptor *const usb_string_descs_g[] = {
     &usb_string_manufacturer,
-    &usb_string_product
+    &usb_string_product,
+    &usb_string_serial_num,
 };
 
 // MARK: Endpoint 0 Functions

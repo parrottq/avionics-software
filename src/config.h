@@ -24,4 +24,9 @@
 #define USB_MANUFACTURER_STRING u"CU InSpace"
 #define USB_PRODUCT_STRING u"CU InSpace MCU Board"
 
+// The make file will make this the current git hash of HEAD
+#ifndef AVIONICS_VERSION
+#define AVIONICS_VERSION u"00001"
+#endif
+
 #endif /* config_h */
